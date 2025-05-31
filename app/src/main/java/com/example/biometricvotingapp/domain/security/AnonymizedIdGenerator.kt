@@ -102,6 +102,54 @@ object AnonymizedIdGenerator {
     }
 
     /**
+     * Attempts to retrieve the components (stable ID, salt) and re-derive the
+     * anonymized ID. This can be used to check if a user has "registered"
+     * in the sense that these components exist.
+     *
+     * This is not retrieving a stored *anonymized ID* directly, but rather
+     * confirming the underlying components for its generation are present.
+     *
+     * @param context The application context.
+     * @return The re-derived anonymized ID as a hex string if components exist,
+     *         otherwise null.
+     */
+    fun getRegisteredAnonymizedId(context: Context): String? {
+        Log.d(TAG, "Attempting to get/re-derive registered anonymized ID...")
+
+        val salt = SecureSaltProvider.getSalt(context)
+        if (salt == null) {
+            Log.i(TAG, "Salt not found. User likely not (fully) registered.")
+            return null
+        }
+
+        val stableInstallId = StableIdentifierProvider.getStableIdentifier(context)
+        if (stableInstallId == null) {
+            Log.i(TAG, "Stable app installation ID not found. User likely not (fully) registered.")
+            return null
+        }
+
+        // If we reached here, both components exist. Proceed to re-derive the ID.
+        try {
+            val stableIdBytes = stableInstallId.toByteArray(StandardCharsets.UTF_8)
+            val dataToHash = ByteArray(stableIdBytes.size + salt.size)
+
+            System.arraycopy(stableIdBytes, 0, dataToHash, 0, stableIdBytes.size)
+            System.arraycopy(salt, 0, dataToHash, stableIdBytes.size, salt.size)
+
+            val messageDigest = MessageDigest.getInstance("SHA-256")
+            val hashedBytes = messageDigest.digest(dataToHash)
+
+            val hexString = bytesToHexString(hashedBytes) // Relies on bytesToHexString being defined correctly above this
+            Log.d(TAG, "Successfully re-derived anonymized ID for registered user.")
+            return hexString
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during SHA-256 ID re-derivation: ${e.message}", e)
+            return null
+        }
+    }
+
+    /**
      * TODO: Consider further enhancements:
      *  - If `authResult.cryptoObject` is available and configured with a signing key,
      *    this generated `hexString` (or the `stableInstallId`) could be signed by it
