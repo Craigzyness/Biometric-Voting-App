@@ -93,12 +93,17 @@ fun RegistrationScreen(
                                 activity = activity,
                                 onSuccess = { authResult ->
                                     isLoading = false
-                                    // CRITICAL: Call the placeholder Anonymized ID Generator
-                                    val generatedId = AnonymizedIdGenerator.generate(authResult)
-                                    registeredId = generatedId // Store for display
-                                    statusMessage = "Registration Successful! (Placeholder ID: ${generatedId.take(8)}...)"
-                                    Log.i("RegistrationScreen", "Biometric Auth Succeeded. Placeholder ID: $generatedId")
-                                    // TODO: In a real app, save the generatedId securely and navigate.
+                                    // CRITICAL: Call the updated Anonymized ID Generator
+                                    val generatedId = AnonymizedIdGenerator.generate(context, authResult) // Pass context
+                                    if (generatedId != null) {
+                                        registeredId = generatedId // Store for display
+                                        statusMessage = "Registration Successful! (Secure ID: ${generatedId.take(8)}...)"
+                                        Log.i("RegistrationScreen", "Biometric Auth Succeeded. Secure ID (first 8 chars): ${generatedId.take(8)}")
+                                    } else {
+                                        statusMessage = "Registration Error: Failed to generate secure ID."
+                                        Log.e("RegistrationScreen", "Failed to generate secure ID after biometric auth.")
+                                    }
+                                    // TODO: In a real app, save the generatedId securely (if not null) and navigate.
                                 },
                                 onError = { errString ->
                                     isLoading = false
