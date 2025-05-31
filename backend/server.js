@@ -129,12 +129,18 @@ app.post('/submitVote', (req, res) => {
         selectedOption, // In a real system, consider hashing or encrypting this if vote content privacy is paramount on the server before blockchain
         timestamp: new Date().toISOString()
     };
+    // --- Simulate Blockchain Recording (Action Item 3.7) ---
+    // In a real scenario, this would involve interacting with a blockchain (e.g., calling a smart contract).
+    // For MVP, we simulate this by logging to an "immutable append-only log" (console for now).
+    // This log entry represents the data that would be written to the blockchain.
+    console.log(`SIMULATING BLOCKCHAIN RECORD (Append-Only Log Entry): ${JSON.stringify(newVote)}`);
+    // --- End of Blockchain Simulation ---
+
+    // Still add to in-memory array for runtime checks (e.g., double-voting prevention for this session)
     submittedVotes.push(newVote);
 
-    console.log(`Vote submitted: Voter ${anonymizedVoterId}, Election ${electionId}, Option ${selectedOption}`);
-    // This is where Action Item 3.7 (Simulate Blockchain Recording) will enhance logic.
-    // For now, just confirming it's added to our in-memory log.
-    res.status(201).json({ message: "Vote submitted successfully.", vote: newVote });
+    console.log(`Vote processed and simulated blockchain record created for: Voter ${anonymizedVoterId}, Election ${electionId}`);
+    res.status(201).json({ message: "Vote submitted successfully and recorded (simulated).", vote: newVote });
 });
 
 // --- End of API Routes ---
