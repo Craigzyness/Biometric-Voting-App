@@ -25,9 +25,8 @@ import com.example.biometricvotingapp.utils.BiometricAvailabilityStatus
 
 @Composable
 fun RegistrationScreen(
-    // onNavigateToLogin: () -> Unit // For existing users - can be re-added if a separate login screen is built
-    // For MVP, successful registration might lead to a simulated "logged in" state or a simple success message.
-    // We'll manage navigation/feedback via statusMessage for now.
+    onNavigateToLogin: () -> Unit, // Re-enable this for MainActivity
+    onRegistrationSuccess: (generatedId: String) -> Unit
 ) {
     val context = LocalContext.current
     val activity = LocalContext.current as? FragmentActivity // BiometricPrompt requires FragmentActivity
@@ -96,14 +95,15 @@ fun RegistrationScreen(
                                     // CRITICAL: Call the updated Anonymized ID Generator
                                     val generatedId = AnonymizedIdGenerator.generate(context, authResult) // Pass context
                                     if (generatedId != null) {
-                                        registeredId = generatedId // Store for display
-                                        statusMessage = "Registration Successful! (Secure ID: ${generatedId.take(8)}...)"
+                                        // Keep local state updates for immediate feedback if desired
+                                        registeredId = generatedId
+                                        statusMessage = "Registration Processing..." // Or similar before calling callback
                                         Log.i("RegistrationScreen", "Biometric Auth Succeeded. Secure ID (first 8 chars): ${generatedId.take(8)}")
+                                        onRegistrationSuccess(generatedId) // Signal success to the caller
                                     } else {
                                         statusMessage = "Registration Error: Failed to generate secure ID."
                                         Log.e("RegistrationScreen", "Failed to generate secure ID after biometric auth.")
                                     }
-                                    // TODO: In a real app, save the generatedId securely (if not null) and navigate.
                                 },
                                 onError = { errString ->
                                     isLoading = false
@@ -153,12 +153,11 @@ fun RegistrationScreen(
                 )
             }
 
-            // Temporarily remove the Login navigation for simplicity in this step,
-            // as the focus is on the registration flow itself.
-            // Spacer(modifier = Modifier.height(24.dp))
-            // TextButton(onClick = onNavigateToLogin) {
-            //     Text("Already registered? Login here")
-            // }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            TextButton(onClick = onNavigateToLogin) {
+                Text("Already registered? Login here")
+            }
         }
     }
 }
@@ -168,6 +167,9 @@ fun RegistrationScreen(
 // @Composable
 // fun PreviewRegistrationScreen() {
 //     // BiometricVotingAppTheme { // Replace with your app's theme
-//         RegistrationScreen()
+//         RegistrationScreen(
+//             onNavigateToLogin = {},
+//             onRegistrationSuccess = {}
+//         )
 //     // }
 // }
