@@ -1,6 +1,7 @@
 package com.example.biometricvotingapp
 
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,9 +9,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import com.example.biometricvotingapp.domain.model.Election // Import Election model
 import com.example.biometricvotingapp.ui.screens.ElectionListScreen
 import com.example.biometricvotingapp.ui.screens.LoginScreen
 import com.example.biometricvotingapp.ui.screens.RegistrationScreen
+import com.example.biometricvotingapp.ui.screens.VotingScreen // Import VotingScreen
 import com.example.biometricvotingapp.ui.screens.getSampleElections
 // TODO: Replace with your actual theme if you have one defined, e.g., in ui.theme package
 // import com.example.biometricvotingapp.ui.theme.BiometricVotingAppTheme
@@ -27,6 +30,7 @@ sealed class Screen {
     object Registration : Screen()
     object Login : Screen()
     object ElectionList : Screen()
+    data class Voting(val election: Election) : Screen() // Added Voting screen with Election data
 }
 
 class MainActivity : ComponentActivity() {
@@ -54,12 +58,13 @@ fun AppNavigator() {
     // Could also store the anonymized ID here if needed across app sessions (with proper persistence)
     // var currentAnonymizedId by remember { mutableStateOf<String?>(null) }
 
-    when (currentScreen) {
+    when (val screen = currentScreen) { // Use 'screen' for smart casting
         is Screen.Registration -> {
             RegistrationScreen(
                 onNavigateToLogin = { currentScreen = Screen.Login },
                 onRegistrationSuccess = { generatedId ->
                     // Handle successful registration
+                    Log.i("AppNavigator", "Registration successful. Generated ID (first 8): ${generatedId.take(8)}")
                     // For MVP, we can directly navigate to ElectionList or Login.
                     // Let's navigate to ElectionList after registration for now.
                     // currentAnonymizedId = generatedId // Store if needed
@@ -72,10 +77,12 @@ fun AppNavigator() {
                 onNavigateToRegister = { currentScreen = Screen.Registration },
                 onLoginSuccess = { anonymizedId ->
                     if (anonymizedId != null) {
+                        Log.i("AppNavigator", "Login successful. Anonymized ID (first 8): ${anonymizedId.take(8)}")
                         // currentAnonymizedId = anonymizedId // Store if needed
                         currentScreen = Screen.ElectionList
                     } else {
                         // Stay on Login screen, error message is handled within LoginScreen
+                        Log.w("AppNavigator", "Login failed or app registration not found.")
                     }
                 }
             )
@@ -83,11 +90,27 @@ fun AppNavigator() {
         is Screen.ElectionList -> {
             ElectionListScreen(
                 elections = getSampleElections(), // Pass the sample data
-                onElectionClicked = { election ->
-                    // TODO: Navigate to Voting Screen for the selected election (Action Item 3.5)
-                    println("Election clicked: ${election.title}") // Placeholder action
+                onElectionClicked = { selectedElection ->
+                    Log.d("AppNavigator", "Election clicked: ${selectedElection.title}")
+                    currentScreen = Screen.Voting(selectedElection) // Navigate to VotingScreen
                 }
                 // TODO: Add onLogoutClicked = { currentScreen = Screen.Login; currentAnonymizedId = null }
+            )
+        }
+        is Screen.Voting -> { // New case for VotingScreen
+            VotingScreen(
+                election = screen.election, // Pass the election from the state
+                onVoteConfirmedBiometrically = { confirmedElection, selectedOption ->
+                    Log.i("AppNavigator", "Vote confirmed for ${confirmedElection.title}, option: $selectedOption")
+                    // For MVP, navigate back to election list after vote.
+                    // TODO: Here you would typically send the vote to a backend/blockchain.
+                    // For now, we simulate success and navigate.
+                    currentScreen = Screen.ElectionList
+                },
+                onNavigateBack = {
+                    Log.d("AppNavigator", "Navigating back from VotingScreen to ElectionList.")
+                    currentScreen = Screen.ElectionList
+                }
             )
         }
     }

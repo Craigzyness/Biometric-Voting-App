@@ -163,6 +163,63 @@ class BiometricAuthManager(private val context: Context) {
 
         biometricPrompt.authenticate(promptInfo)
     }
+
+    /**
+     * Creates BiometricPrompt.PromptInfo for vote confirmation.
+     */
+    private fun createVoteConfirmationPromptInfo(electionTitle: String, selectedOption: String): BiometricPrompt.PromptInfo {
+        return BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Confirm Your Vote")
+            .setSubtitle("Election: $electionTitle")
+            .setDescription("Confirm with your fingerprint to cast your vote for: \"$selectedOption\". This action is final for this session.")
+            .setNegativeButtonText("Cancel")
+            .setConfirmationRequired(true) // Recommended for sensitive actions
+            .setAllowedAuthenticators(BIOMETRIC_STRONG)
+            .build()
+    }
+
+    /**
+     * Shows the biometric prompt for vote confirmation.
+     *
+     * @param activity The FragmentActivity that hosts the prompt.
+     * @param electionTitle The title of the election.
+     * @param selectedOption The option the user has selected.
+     * @param onSuccess Callback invoked when authentication is successful.
+     * @param onError Callback invoked when an unrecoverable error occurs.
+     * @param onFailed Callback invoked when authentication fails.
+     */
+    fun promptForVoteConfirmation(
+        activity: FragmentActivity,
+        electionTitle: String,
+        selectedOption: String,
+        onSuccess: (BiometricPrompt.AuthenticationResult) -> Unit,
+        onError: (String) -> Unit,
+        onFailed: () -> Unit
+    ) {
+        val promptInfo = createVoteConfirmationPromptInfo(electionTitle, selectedOption)
+        val biometricPrompt = BiometricPrompt(activity, mainExecutor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    Log.d(TAG, "Vote Confirmation Biometric Authentication Succeeded!")
+                    onSuccess(result)
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    Log.e(TAG, "Vote Confirmation Biometric Authentication Error: $errorCode - $errString")
+                    onError(errString.toString())
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    Log.w(TAG, "Vote Confirmation Biometric Authentication Failed.")
+                    onFailed()
+                }
+            })
+
+        biometricPrompt.authenticate(promptInfo)
+    }
 }
 
 enum class BiometricAvailabilityStatus {
