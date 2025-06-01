@@ -12,7 +12,10 @@ const DB_HOST = process.env.DB_HOST || 'localhost';
 const DB_PORT = process.env.DB_PORT || 5432;
 const DB_USER = process.env.DB_USER || 'your_db_user'; // Default placeholder
 const DB_PASSWORD = process.env.DB_PASSWORD || 'your_db_password'; // Default placeholder
-const DB_NAME = process.env.DB_NAME || 'biometric_voting_app_db';
+
+const DB_NAME_DEFAULT = 'biometric_voting_app_db';
+const DB_NAME_TEST = process.env.DB_TEST_NAME || 'biometric_voting_app_test_db'; // Test specific DB name
+const DB_NAME = process.env.NODE_ENV === 'test' ? DB_NAME_TEST : (process.env.DB_NAME || DB_NAME_DEFAULT);
 
 // Database Connection Pool
 const pool = new Pool({
@@ -276,11 +279,15 @@ app.get('/', (req, res) => {
 
 // --- End of API Routes ---
 
-app.listen(PORT, async () => {
-    await initializeDatabase(); // Initialize DB and tables before starting server
-    console.log(`Backend server listening on port ${PORT}`);
-    console.log('Using PostgreSQL for data persistence.');
-    console.log('API endpoints are available under /api/v1');
-});
+// Start server only if not in test environment
+if (process.env.NODE_ENV !== 'test') {
+    app.listen(PORT, async () => {
+        await initializeDatabase(); // Initialize DB and tables before starting server
+        console.log(`Backend server listening on port ${PORT}`);
+        console.log('Using PostgreSQL for data persistence.');
+        console.log(`Using database: ${DB_NAME}`);
+        console.log('API endpoints are available under /api/v1');
+    });
+}
 
-module.exports = app;
+module.exports = { app, pool }; // Export app and pool for testing
