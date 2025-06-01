@@ -8,5 +8,9 @@ data class VoteRequest(
     @SerializedName("electionId")
     val electionId: String,
     @SerializedName("selectedOption")
-    val selectedOption: String
+    val selectedOption: String,
+    @SerializedName("encrypted_proof")
+    val encryptedProof: String?, // Base64 encoded encrypted data
+    @SerializedName("iv")
+    val iv: String? // Base64 encoded Initialization Vector
 )

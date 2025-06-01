@@ -192,6 +192,7 @@ class BiometricAuthManager(private val context: Context) {
         activity: FragmentActivity,
         electionTitle: String,
         selectedOption: String,
+        cryptoObject: BiometricPrompt.CryptoObject?, // New parameter
         onSuccess: (BiometricPrompt.AuthenticationResult) -> Unit,
         onError: (String) -> Unit,
         onFailed: () -> Unit
@@ -218,7 +219,16 @@ class BiometricAuthManager(private val context: Context) {
                 }
             })
 
-        biometricPrompt.authenticate(promptInfo)
+        if (cryptoObject != null) {
+            Log.d(TAG, "Authenticating with CryptoObject for vote confirmation.")
+            biometricPrompt.authenticate(promptInfo, cryptoObject)
+        } else {
+            // This case should ideally not be hit if cryptoObject is always prepared by ViewModel.
+            // If it can be null, then the backend needs to handle votes without proof,
+            // or this path should be treated as an error.
+            Log.w(TAG, "Authenticating for vote confirmation WITHOUT CryptoObject. This may be unintended.")
+            biometricPrompt.authenticate(promptInfo)
+        }
     }
 }
 

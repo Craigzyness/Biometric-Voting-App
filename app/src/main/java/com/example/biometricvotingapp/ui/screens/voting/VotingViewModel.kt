@@ -24,10 +24,14 @@ sealed interface VotingUiState {
     data class Error(val message: String) : VotingUiState
 }
 
+import android.util.Base64 // For Base64 encoding
+import androidx.biometric.BiometricPrompt // For CryptoObject type
+import com.example.biometricvotingapp.utils.SecurityUtil // For Crypto operations
+
 // Define one-time events
 sealed interface VotingViewEvent {
-    object ShowBiometricPrompt : VotingViewEvent
-    data class VoteSubmissionSuccessAndNavigate(val message: String) : VotingViewEvent // Includes message for consistency
+    data class ShowBiometricPrompt(val cryptoObject: BiometricPrompt.CryptoObject) : VotingViewEvent // Now carries CryptoObject
+    data class VoteSubmissionSuccessAndNavigate(val message: String) : VotingViewEvent
 }
 
 
@@ -52,8 +56,17 @@ class VotingViewModel(
         Log.d("VotingViewModel", "Cast Vote button clicked for election: $electionId, option: $selectedOption")
         currentVoteArgs = Triple(anonymizedVoterId, electionId, selectedOption)
         _uiState.value = VotingUiState.AwaitingBiometrics
+
+        // Attempt to get CryptoObject for encryption
+        val cryptoForPrompt = SecurityUtil.getCryptoObjectForEncryption()
+        if (cryptoForPrompt == null) {
+            Log.e("VotingViewModel", "Failed to create CryptoObject for encryption.")
+            _uiState.value = VotingUiState.Error("Error preparing secure voting session. Please try again.")
+            return
+        }
+
         viewModelScope.launch {
-            _eventFlow.emit(VotingViewEvent.ShowBiometricPrompt)
+            _eventFlow.emit(VotingViewEvent.ShowBiometricPrompt(cryptoForPrompt))
         }
     }
 
@@ -64,12 +77,36 @@ class VotingViewModel(
         Log.d("VotingViewModel", "Biometric authentication successful, proceeding to submit vote.")
         _uiState.value = VotingUiState.Loading
 
+        val cryptoObjectFromResult = authResult.cryptoObject
+        if (cryptoObjectFromResult == null) {
+            Log.e("VotingViewModel", "CryptoObject is null in AuthenticationResult. This should not happen.")
+            _uiState.value = VotingUiState.Error("Critical error: Secure authentication context lost.")
+            return
+        }
+
         currentVoteArgs?.let { args ->
+            // Define a simple payload to encrypt as proof.
+            // Could include parts of the vote itself, like a hash of (electionId + option + timestamp)
+            val voteProofPayload = "Vote for ${args.second} at ${System.currentTimeMillis()}"
+            val encryptionResult = SecurityUtil.encryptData(voteProofPayload, cryptoObjectFromResult)
+
+            if (encryptionResult == null) {
+                Log.e("VotingViewModel", "Failed to encrypt vote proof.")
+                _uiState.value = VotingUiState.Error("Error securing vote. Please try again.")
+                return@let // Exit let block
+            }
+
+            val (ivBytes, encryptedProofBytes) = encryptionResult
+            val ivString = Base64.encodeToString(ivBytes, Base64.NO_WRAP)
+            val encryptedProofString = Base64.encodeToString(encryptedProofBytes, Base64.NO_WRAP)
+
             viewModelScope.launch {
                 val voteRequest = VoteRequest(
                     anonymizedVoterId = args.first,
                     electionId = args.second,
-                    selectedOption = args.third
+                    selectedOption = args.third,
+                    encryptedProof = encryptedProofString,
+                    iv = ivString
                 )
                 val voteResult = votingRepository.submitVote(voteRequest)
                 voteResult.fold(

@@ -59,6 +59,7 @@ fun VotingScreen(
                                     activity = activity,
                                     electionTitle = election.title,
                                     selectedOption = selectedOptionState!!, // Safe due to check
+                                    cryptoObject = event.cryptoObject, // Pass the cryptoObject
                                     onSuccess = { authResult ->
                                         viewModel.onBiometricAuthenticationSuccess(authResult)
                                     },

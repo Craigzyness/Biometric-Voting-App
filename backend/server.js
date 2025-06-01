@@ -71,6 +71,8 @@ async function initializeDatabase() {
                 voter_id UUID NOT NULL REFERENCES Voters(id),
                 election_id UUID NOT NULL REFERENCES Elections(id),
                 selected_option_value TEXT NOT NULL,
+                encrypted_proof TEXT NULL,
+                iv TEXT NULL,
                 cast_at_timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 is_valid BOOLEAN NOT NULL DEFAULT TRUE,
                 UNIQUE (voter_id, election_id) -- Critical constraint
@@ -233,19 +235,26 @@ apiRouter.post('/submitVote', async (req, res) => {
 
         // 3. Attempt to insert vote (double voting check by DB unique constraint)
         try {
+            const { encryptedProof, iv } = req.body; // Get new fields from request body
             const voteInsertResult = await pool.query(
-                'INSERT INTO Votes (voter_id, election_id, selected_option_value) VALUES ($1, $2, $3) RETURNING id, election_id, selected_option_value, cast_at_timestamp',
-                [internalVoterId, internalElectionId, selectedOption]
+                'INSERT INTO Votes (voter_id, election_id, selected_option_value, encrypted_proof, iv) VALUES ($1, $2, $3, $4, $5) RETURNING id, election_id, selected_option_value, cast_at_timestamp',
+                [internalVoterId, internalElectionId, selectedOption, encryptedProof || null, iv || null]
             );
             const newVote = voteInsertResult.rows[0];
 
-            console.log(`SIMULATING BLOCKCHAIN RECORD (Append-Only Log Entry): ${JSON.stringify({
-                voteId: newVote.id, // Internal DB id for the vote
-                anonymizedVoterId: anonymizedVoterId, // Original anonymized ID from request
-                electionId: newVote.election_id, // Internal election ID
+            // Log more info for simulation, including proof if present
+            const logDataForBlockchain = {
+                voteId: newVote.id,
+                anonymizedVoterId: anonymizedVoterId,
+                electionId: newVote.election_id,
                 selectedOption: newVote.selected_option_value,
-                castAtTimestamp: newVote.cast_at_timestamp
-            })}`);
+                castAtTimestamp: newVote.cast_at_timestamp,
+            };
+            if (encryptedProof && iv) {
+                logDataForBlockchain.encryptedProof = encryptedProof; // For simulation only
+                logDataForBlockchain.iv = iv; // For simulation only
+            }
+            console.log(`SIMULATING BLOCKCHAIN RECORD (Append-Only Log Entry): ${JSON.stringify(logDataForBlockchain)}`);
 
             res.status(201).json({
                 message: "Vote submitted successfully.",
