@@ -7,17 +7,25 @@ const PORT = process.env.PORT || 3000;
 // Middleware to parse JSON bodies
 app.use(express.json());
 
+// Database Configuration from Environment Variables with Defaults
+const DB_HOST = process.env.DB_HOST || 'localhost';
+const DB_PORT = process.env.DB_PORT || 5432;
+const DB_USER = process.env.DB_USER || 'your_db_user'; // Default placeholder
+const DB_PASSWORD = process.env.DB_PASSWORD || 'your_db_password'; // Default placeholder
+const DB_NAME = process.env.DB_NAME || 'biometric_voting_app_db';
+
 // Database Connection Pool
 const pool = new Pool({
-    user: 'your_db_user', // Placeholder
-    host: 'localhost',     // Placeholder
-    database: 'biometric_voting_app_db', // Placeholder
-    password: 'your_db_password', // Placeholder
-    port: 5432,            // Placeholder
+    user: DB_USER,
+    host: DB_HOST,
+    database: DB_NAME,
+    password: DB_PASSWORD,
+    port: parseInt(DB_PORT), // Ensure port is an integer
 });
 
 // Test DB Connection and Create Tables
 async function initializeDatabase() {
+    console.log(`Attempting to connect to database: ${DB_NAME} on ${DB_HOST}:${DB_PORT} as user ${DB_USER}`);
     try {
         const client = await pool.connect();
         console.log('Connected to PostgreSQL database successfully!');
