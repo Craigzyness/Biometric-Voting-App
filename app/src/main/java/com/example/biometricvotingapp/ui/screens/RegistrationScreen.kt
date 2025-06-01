@@ -129,7 +129,10 @@ fun RegistrationScreen(
             ) {
                 when (uiState) {
                     is RegistrationUiState.Loading, RegistrationUiState.AwaitingBiometrics -> {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp).testTag("loadingIndicator"),
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
                     }
                     else -> Text("Register with Fingerprint")
                 }
@@ -153,7 +156,7 @@ fun RegistrationScreen(
                     },
                     style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 16.dp)
+                    modifier = Modifier.padding(top = 16.dp).testTag("statusMessageText")
                 )
             }
 

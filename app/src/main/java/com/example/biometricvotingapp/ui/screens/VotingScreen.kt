@@ -148,12 +148,14 @@ fun VotingScreen(
                                 },
                                 role = Role.RadioButton
                             )
-                            .padding(horizontal = 16.dp),
+                            .padding(horizontal = 16.dp)
+                            .testTag("option_row_$optionText"), // Test tag for the Row
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
                             selected = (selectedOptionState == optionText),
-                            onClick = null // Recommended for accessibility with selectable parent
+                            onClick = null, // Recommended for accessibility with selectable parent
+                            modifier = Modifier.testTag("option_radio_$optionText") // Test tag for RadioButton
                         )
                         Text(
                             text = optionText,
@@ -180,7 +182,10 @@ fun VotingScreen(
             ) {
                 when (uiState) {
                     is VotingUiState.Loading, VotingUiState.AwaitingBiometrics -> {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp).testTag("voteLoadingIndicator"),
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
                     }
                     else -> Text("Cast Vote with Fingerprint")
                 }
@@ -202,7 +207,8 @@ fun VotingScreen(
                         else -> MaterialTheme.colorScheme.primary // Includes Loading, Awaiting, Success
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    modifier = Modifier.testTag("voteStatusMessageText")
                 )
             }
         }

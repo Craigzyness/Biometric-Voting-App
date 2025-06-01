@@ -1,8 +1,7 @@
 package com.example.biometricvotingapp.ui.screens.voting
 
-import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.example.biometricvotingapp.domain.model.Election
 import com.example.biometricvotingapp.ui.screens.voting.VotingUiState
@@ -32,13 +31,14 @@ class VotingScreenTest {
     private lateinit var mockViewModel: VotingViewModel
     private lateinit var mockOnVoteConfirmedAndSubmitted: (Election, String) -> Unit
     private lateinit var mockOnNavigateBack: () -> Unit
-    private lateinit var events: MutableSharedFlow<VotingViewEvent>
+    private lateinit var uiStateFlow: MutableStateFlow<VotingUiState>
+    private lateinit var eventFlow: MutableSharedFlow<VotingViewEvent>
 
     private val sampleElection = Election(
         id = "election1",
         title = "Sample Election Title",
         description = "This is a sample election description.",
-        options = listOf("Option Yes", "Option No", "Option Maybe")
+        options = listOf("Option Yes", "Option No", "Option Maybe") // Make sure these are unique for test tags
     )
     private val sampleVoterId = "testVoter123"
 
@@ -47,14 +47,15 @@ class VotingScreenTest {
         mockViewModel = mockk(relaxed = true)
         mockOnVoteConfirmedAndSubmitted = mockk(relaxed = true)
         mockOnNavigateBack = mockk(relaxed = true)
-        events = MutableSharedFlow()
 
-        every { mockViewModel.uiState } returns MutableStateFlow(VotingUiState.Idle)
-        every { mockViewModel.eventFlow } returns events.asSharedFlow()
+        uiStateFlow = MutableStateFlow(VotingUiState.Idle)
+        eventFlow = MutableSharedFlow()
+
+        every { mockViewModel.uiState } returns uiStateFlow
+        every { mockViewModel.eventFlow } returns eventFlow.asSharedFlow()
     }
 
-    @Test
-    fun votingScreen_displaysInitialElementsCorrectly_whenIdle() {
+    private fun setScreenContent() {
         composeTestRule.setContent {
             BiometricVotingAppTheme {
                 VotingScreen(
@@ -66,25 +67,121 @@ class VotingScreenTest {
                 )
             }
         }
+    }
 
-        // Check for election title
+    @Test
+    fun votingScreen_displaysInitialElementsCorrectly_whenIdle() {
+        uiStateFlow.value = VotingUiState.Idle // Ensure Idle state
+        setScreenContent()
+                )
+            }
+        }
+
         composeTestRule.onNodeWithText(sampleElection.title).assertIsDisplayed()
-        // Check for election description
         composeTestRule.onNodeWithText(sampleElection.description).assertIsDisplayed()
-        // Check for some options
-        composeTestRule.onNodeWithText("Option Yes").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Option Yes").assertIsDisplayed() // From sampleElection.options
         composeTestRule.onNodeWithText("Option No").assertIsDisplayed()
-        // Check for the vote button
-        composeTestRule.onNodeWithText("Cast Vote with Fingerprint").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Cast Vote with Fingerprint").assertIsDisplayed().assertIsNotEnabled() // Initially no option selected
+        composeTestRule.onNodeWithTag("voteLoadingIndicator", useUnmergedTree = true).assertDoesNotExist()
+        composeTestRule.onNodeWithTag("voteStatusMessageText", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test
+    fun votingScreen_selectsRadioButton_onClick() {
+        uiStateFlow.value = VotingUiState.Idle
+        setScreenContent()
+
+        // Click "Option Yes"
+        composeTestRule.onNodeWithTag("option_row_Option Yes").performClick()
+        composeTestRule.onNodeWithTag("option_radio_Option Yes").assertIsSelected()
+        composeTestRule.onNodeWithTag("option_radio_Option No").assertIsNotSelected()
+        composeTestRule.onNodeWithText("Cast Vote with Fingerprint").assertIsEnabled() // Button should be enabled
+
+        // Click "Option No"
+        composeTestRule.onNodeWithTag("option_row_Option No").performClick()
+        composeTestRule.onNodeWithTag("option_radio_Option No").assertIsSelected()
+        composeTestRule.onNodeWithTag("option_radio_Option Yes").assertIsNotSelected()
+        composeTestRule.onNodeWithText("Cast Vote with Fingerprint").assertIsEnabled()
+    }
+
+    @Test
+    fun votingScreen_showsLoading_whenStateIsLoading() {
+        uiStateFlow.value = VotingUiState.Loading
+        setScreenContent()
+
+        // Select an option to enable the button before it goes into loading, to check its content change
+        composeTestRule.onNodeWithTag("option_row_Option Yes").performClick()
+
+        composeTestRule.onNodeWithTag("voteLoadingIndicator", useUnmergedTree = true).assertIsDisplayed()
+        composeTestRule.onNodeWithText("Cast Vote with Fingerprint").assertDoesNotExist() // Text replaced by indicator
+        composeTestRule.onNodeWithTag("voteStatusMessageText", useUnmergedTree = true).assertTextEquals("Submitting your vote...")
+        // Radio buttons could be disabled during loading
+        composeTestRule.onNodeWithTag("option_row_Option Yes").assert(has नोClickAction()) // Check if clickable, might need custom semantic
+    }
+
+    @Test
+    fun votingScreen_showsErrorMessage_whenStateIsError() {
+        val errorMessage = "Test vote error"
+        uiStateFlow.value = VotingUiState.Error(errorMessage)
+        setScreenContent()
+
+        composeTestRule.onNodeWithTag("voteStatusMessageText", useUnmergedTree = true).assertTextEquals(errorMessage)
+        composeTestRule.onNodeWithTag("voteLoadingIndicator", useUnmergedTree = true).assertDoesNotExist()
+        composeTestRule.onNodeWithText("Cast Vote with Fingerprint").assertIsDisplayed().assertIsNotEnabled() // Button disabled if no option selected, or enabled if option was selected before error
+
+        // Enable button by selecting option, then check if it's still enabled after error
+        composeTestRule.onNodeWithTag("option_row_Option Yes").performClick()
+        composeTestRule.onNodeWithText("Cast Vote with Fingerprint").assertIsEnabled()
+    }
+
+    @Test
+    fun votingScreen_showsSuccessMessageAndDisablesVoting_whenStateIsSuccess() {
+        val successMsg = "Vote cast!"
+        uiStateFlow.value = VotingUiState.Success(successMsg)
+        setScreenContent()
+
+        // Select an option to see if button becomes disabled due to Success state
+        composeTestRule.onNodeWithTag("option_row_Option Yes").performClick()
+
+        composeTestRule.onNodeWithTag("voteStatusMessageText", useUnmergedTree = true).assertTextEquals(successMsg)
+        composeTestRule.onNodeWithText("Cast Vote with Fingerprint").assertIsNotEnabled() // Button disabled after success
+        // Radio buttons should also be disabled
+        composeTestRule.onNodeWithTag("option_row_Option Yes").assert(has नोClickAction())
+    }
+
+    @Test
+    fun voteButton_enabledState_isCorrect() {
+        uiStateFlow.value = VotingUiState.Idle
+        setScreenContent()
+
+        // Initial: No selection, Idle state -> button disabled
+        composeTestRule.onNodeWithText("Cast Vote with Fingerprint").assertIsNotEnabled()
+
+        // Option Selected, Idle state -> button enabled
+        composeTestRule.onNodeWithTag("option_row_Option Yes").performClick()
+        composeTestRule.onNodeWithText("Cast Vote with Fingerprint").assertIsEnabled()
+
+        // Loading state -> button disabled (content changes to indicator)
+        uiStateFlow.value = VotingUiState.Loading
+        composeTestRule.onNodeWithTag("voteLoadingIndicator", useUnmergedTree = true).assertIsDisplayed()
+        // Check button's enabled state via its parent if text is gone, or rely on content change
+
+        // AwaitingBiometrics state -> button disabled (content changes to indicator)
+        uiStateFlow.value = VotingUiState.AwaitingBiometrics
+        composeTestRule.onNodeWithTag("voteLoadingIndicator", useUnmergedTree = true).assertIsDisplayed()
+
+        // Success state -> button disabled
+        uiStateFlow.value = VotingUiState.Success("Vote Cast!")
+        composeTestRule.onNodeWithText("Cast Vote with Fingerprint").assertIsNotEnabled()
     }
 
     @Test
     fun voteSuccess_triggersOnVoteConfirmedAndSubmittedCallback() = runTest {
         val successMessage = "Vote successfully cast!"
-        val selectedOption = "Option Yes"
+        // val selectedOption = "Option Yes" // This is set by UI interaction if needed
 
-        // Spy on the callback to verify invocation
         val spiedOnVoteConfirmed = spyk(mockOnVoteConfirmedAndSubmitted)
+        uiStateFlow.value = VotingUiState.Idle // Start from Idle to allow option selection
 
         composeTestRule.setContent {
             BiometricVotingAppTheme {
