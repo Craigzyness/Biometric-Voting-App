@@ -155,7 +155,7 @@ fun VotingScreen(
                                             },
                                             onFailure = { error ->
                                                 // voteSuccessfullyCast remains false
-                                                statusMessage = "Backend Vote Submission Failed: ${error.message}"
+                                                statusMessage = "Error: Vote Submission Failed - ${error.message}" // Ensure "Error" is present
                                                 Log.e("VotingScreen", "Backend vote submission error: ${error.message}")
                                                 // Do not navigate. User can potentially retry if the button is re-enabled.
                                             }

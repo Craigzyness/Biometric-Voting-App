@@ -97,8 +97,9 @@ fun RegistrationScreen(
                             biometricAuthManager.promptForRegistration(
                                 activity = activity,
                                 onSuccess = { authResult ->
-                                    isLoading = false
-                                    // CRITICAL: Call the updated Anonymized ID Generator
+                                    // isLoading is already true from the initial button click.
+                                    // It will be set to false only after the final outcome (network or local failure).
+
                                     // Local Anonymized ID Generation
                                     val generatedAnonymizedId = AnonymizedIdGenerator.generate(context, authResult)
 
@@ -108,9 +109,9 @@ fun RegistrationScreen(
 
                                         // Launch a coroutine to call the backend
                                         coroutineScope.launch {
-                                            isLoading = true // Show loading for network call specifically
+                                            // No need to set isLoading = true here again, it's already true.
                                             val registrationResult = votingRepository.registerVoter(generatedAnonymizedId)
-                                            isLoading = false
+                                            isLoading = false // Network call finished, set loading to false.
 
                                             registrationResult.fold(
                                                 onSuccess = { backendResponse ->
@@ -120,41 +121,41 @@ fun RegistrationScreen(
                                                     onRegistrationSuccess(generatedAnonymizedId) // Navigate on success
                                                 },
                                                 onFailure = { error ->
-                                                    statusMessage = "Backend Registration Failed: ${error.message}"
+                                                    statusMessage = "Error: Backend Registration Failed - ${error.message}" // Ensure "Error" is present
                                                     Log.e("RegistrationScreen", "Backend registration error: ${error.message}")
                                                     // Do not navigate if backend registration fails. User can retry.
                                                 }
                                             )
                                         }
                                     } else {
-                                        isLoading = false // Stop loading if local ID generation failed
                                         statusMessage = "Registration Error: Failed to generate secure ID locally."
                                         Log.e("RegistrationScreen", "Failed to generate secure ID after biometric auth.")
+                                        isLoading = false // Failed to generate local ID, set loading to false.
                                     }
                                 },
                                 onError = { errString ->
-                                    isLoading = false // Stop loading on biometric error
                                     statusMessage = "Registration Error: $errString"
                                     Log.e("RegistrationScreen", "Biometric Auth Error: $errString")
+                                    isLoading = false // Biometric error, set loading to false.
                                 },
                                 onFailed = {
-                                    isLoading = false // Stop loading on biometric failure
                                     statusMessage = "Registration Failed: Fingerprint not recognized. Please try again."
                                     Log.w("RegistrationScreen", "Biometric Auth Failed.")
+                                    isLoading = false // Biometric failure, set loading to false.
                                 }
                             )
                         }
                         BiometricAvailabilityStatus.NONE_ENROLLED -> {
-                            isLoading = false
                             statusMessage = "Error: No fingerprints enrolled. Please enroll a fingerprint in your device settings."
                             Log.w("RegistrationScreen", "No biometrics enrolled.")
+                            isLoading = false // Not available, set loading to false.
                             // TODO: Offer to navigate to device security settings.
                         }
                         else -> {
-                            isLoading = false
                             val availability = biometricAuthManager.canAuthenticateWithBiometrics()
                             statusMessage = "Error: Biometric authentication not available ($availability). Check device settings."
                             Log.w("RegistrationScreen", "Biometrics not available: $availability")
+                            isLoading = false // Not available, set loading to false.
                         }
                     }
                 },
