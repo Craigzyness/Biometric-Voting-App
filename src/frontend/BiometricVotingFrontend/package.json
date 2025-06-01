@@ -1,0 +1,21 @@
+{
+  "name": "BiometricVotingFrontend",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "android": "echo 'run android'",
+    "ios": "echo 'run ios'",
+    "start": "echo 'start metro bundler'",
+    "test": "echo 'run tests'"
+  },
+  "dependencies": {
+    "react": "18.2.0",
+    "react-native": "0.73.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
