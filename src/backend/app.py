@@ -42,12 +42,10 @@ class SecureModelView(SecureViewMixin, ModelView):
 class BlockchainPollAdminView(SecureViewMixin, BaseView):
     @expose('/')
     def index(self):
-        elections_data = []
-        error_message = None
+        elections_data = []; error_message = None
         if blockchain_service.is_connected():
             count, error = blockchain_service.get_elections_count_from_chain()
-            if error:
-                error_message = f"Error fetching election count: {error}"
+            if error: error_message = f"Error fetching election count: {error}"
             elif count is not None:
                 for i in range(1, count + 1):
                     poll_detail, detail_error = blockchain_service.get_election_details_from_chain(i)
@@ -56,51 +54,49 @@ class BlockchainPollAdminView(SecureViewMixin, BaseView):
                         if vc_error: poll_detail['vote_counts_str'] = "Error fetching"
                         else: poll_detail['vote_counts_str'] = ", ".join(map(str, vote_counts or []))
                         elections_data.append(poll_detail)
-                    elif detail_error:
-                         current_app.logger.warning(f"Admin: Could not fetch details for election ID {i}: {detail_error}")
-        else:
-            error_message = "Blockchain service not available."
-
-        if error_message:
-            flash(error_message, 'error')
-
+                    elif detail_error: current_app.logger.warning(f"Admin: Could not fetch details for election ID {i}: {detail_error}")
+        else: error_message = "Blockchain service not available."
+        if error_message: flash(error_message, 'error')
         return self.render('admin/blockchain_poll_list.html', elections=elections_data)
 
     @expose('/create', methods=('GET', 'POST'))
     def create_view(self):
         if request.method == 'POST':
-            title = request.form.get('title')
-            description = request.form.get('description', '')
-            options_str = request.form.get('options', '')
-            is_active = request.form.get('is_active') == 'on'
-
+            title = request.form.get('title'); description = request.form.get('description', '')
+            options_str = request.form.get('options', ''); is_active = request.form.get('is_active') == 'on'
             options = [opt.strip() for opt in options_str.split(',') if opt.strip()]
-
             if not title or len(options) < 2:
                 flash('Title and at least two comma-separated options are required.', 'error')
             else:
                 result, error = blockchain_service.create_election_on_chain(title, description, options, is_active)
-                if error:
-                    flash(f'Error creating election on blockchain: {error}', 'error')
+                if error: flash(f'Error creating election on blockchain: {error}', 'error')
                 else:
                     tx_hash = result.get("tx_hash", "N/A")
-                    new_id = result.get("election_id", "N/A (check logs)")
-                    flash(f'Election creation transaction sent! TxHash: {tx_hash}, New ID (from event): {new_id}', 'success')
+                    new_id_msg = f", New ID (from event): {result.get('election_id')}" if result.get('election_id') is not None else "" # Handle None for ID
+                    flash(f'Election creation transaction sent! TxHash: {tx_hash}{new_id_msg}', 'success')
                     return redirect(url_for('.index'))
-
         return self.render('admin/blockchain_poll_create.html')
 
     @expose('/toggle_status/<int:election_id>', methods=('POST',))
     def toggle_status_view(self, election_id):
-        # Placeholder for actual on-chain toggle status function
-        # result, error = blockchain_service.toggle_election_status_on_chain(election_id)
-        # if error: flash(f"Error toggling status for {election_id}: {error}", 'error')
-        # else: flash(f"Toggle status transaction sent for election {election_id}.", 'success')
-        flash(f"Placeholder: Would toggle status for election {election_id}. Functionality requires blockchain_service update.", 'info')
+        if not blockchain_service.is_connected():
+            flash("Blockchain service not available.", 'error')
+            return redirect(url_for('.index'))
+
+        current_app.logger.info(f"Admin attempting to toggle status for election ID: {election_id}")
+        result, error = blockchain_service.toggle_election_status_on_chain(election_id)
+
+        if error:
+            flash(f"Error toggling status for election {election_id}: {error}", 'error')
+            current_app.logger.error(f"Error toggling status for election {election_id} on blockchain: {error}")
+        else:
+            tx_hash = result.get("tx_hash", "N/A")
+            flash(f"Toggle status transaction sent for election {election_id}! TxHash: {tx_hash}. Status may take a moment to reflect.", 'success')
+            current_app.logger.info(f"Toggle status transaction for election {election_id} sent. TxHash: {tx_hash}")
+
         return redirect(url_for('.index'))
 
-    def is_visible(self):
-        return True
+    def is_visible(self): return True
 
 # --- App Setup ---
 app = Flask(__name__)
@@ -121,21 +117,17 @@ with app.app_context():
         app.logger.info("Blockchain service initialized successfully.")
 
 pending_challenges = {}
-
 from .models import User, Poll, Vote
 from .auth import register_user as auth_register_user
 from .auth import get_user_by_username as auth_get_user_by_username
 
-class UserAdminView(SecureModelView):
+class UserAdminView(SecureModelView): # ... (condensed)
     column_list = ('id', 'username', 'email', 'biometrics_enabled'); column_searchable_list = ('username', 'email'); column_filters = ('biometrics_enabled',); form_excluded_columns = ('password_hash', 'biometric_public_key', 'votes'); can_create = False; can_delete = False; can_edit = True
-
-class SQLPollAdminView(SecureModelView): # Renamed to distinguish
+class SQLPollAdminView(SecureModelView): # ... (condensed)
     column_list = ('id', 'title', 'start_date', 'end_date', 'created_at'); column_searchable_list = ('title',); column_filters = ('start_date', 'end_date'); form_columns = ('title', 'description', 'options', 'start_date', 'end_date'); can_create = True; can_edit = True; can_delete = True
-    def __init__(self, session, **kwargs): # Explicitly pass model
-        super(SQLPollAdminView, self).__init__(Poll, session, name="SQL Polls", **kwargs)
-
-class VoteAdminView(SecureModelView):
-    column_list = ('id', 'voter.username', 'poll.title', 'selected_option_id', 'timestamp'); column_searchable_list = ('voter.username', 'poll.title'); column_filters = ('timestamp', 'poll_id'); can_create = False; can_edit = False; can_delete = False
+    def __init__(self, session, **kwargs): super(SQLPollAdminView, self).__init__(Poll, session, name="SQL Polls", **kwargs)
+class VoteAdminView(SecureModelView): # ... (condensed)
+    column_list = ('id', 'voter.username', 'poll.title', 'selected_option_id', 'timestamp'); column_searchable_list = ('voter.username', 'poll.title'); column_filters = ('timestamp', 'poll_id'); can_create = False; can_edit = False; can_delete = False # Corrected poll.title filter to poll_id
 
 admin.add_view(UserAdminView(User, db.session))
 admin.add_view(SQLPollAdminView(db.session))

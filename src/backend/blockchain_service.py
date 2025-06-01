@@ -5,14 +5,13 @@ from web3.exceptions import ContractLogicError, TransactionNotFound
 from hexbytes import HexBytes
 import traceback # For detailed error logging
 
-# --- Configuration ---
+# --- Configuration & Globals ---
 DEPLOYED_CONTRACT_ADDRESS = os.environ.get('CONTRACT_ADDRESS', 'YOUR_DEPLOYED_CONTRACT_ADDRESS_HERE')
 GANACHE_URL = os.environ.get('GANACHE_URL', "http://127.0.0.1:7545")
 ABI_FILE_PATH = os.path.join(
     os.path.dirname(__file__), '..', 'blockchain', 'artifacts', 'contracts',
     'ElectionManager.sol', 'ElectionManager.json'
 )
-
 w3 = None
 election_manager_contract = None
 contract_abi = None
@@ -59,7 +58,7 @@ def init_blockchain_connection():
                 SIGNER_ACCOUNT_ADDRESS = account.address
                 w3.eth.default_account = SIGNER_ACCOUNT_ADDRESS
                 # print(f"Transaction signing account loaded: {SIGNER_ACCOUNT_ADDRESS}") # Less verbose
-            except Exception as e: print(f"WARNING: Bad GANACHE_PRIVATE_KEY_FOR_TX: {e}"; SIGNER_ACCOUNT_ADDRESS = None) # Ensure None on bad key
+            except Exception as e: print(f"WARNING: Bad GANACHE_PRIVATE_KEY_FOR_TX: {e}"); SIGNER_ACCOUNT_ADDRESS = None
         else: print("WARNING: GANACHE_PRIVATE_KEY_FOR_TX not set. Transactions will fail if gas is required from a specific account.")
         return True
     except Exception as e: print(f"Error initializing blockchain connection/contract: {e}"); w3=None;election_manager_contract=None;SIGNER_ACCOUNT_ADDRESS=None;return False
@@ -69,7 +68,7 @@ def get_contract():
         if not init_blockchain_connection(): return None
     return election_manager_contract
 
-# --- Read Functions (existing, condensed) ---
+# --- Read Functions ---
 def get_election_details_from_chain(election_id):
     contract = get_contract();
     if not contract: return None, "Blockchain service unavailable."
@@ -94,7 +93,7 @@ def get_all_vote_counts_for_election_from_chain(election_id):
     except ContractLogicError as e: return None, f"Blockchain Error: {e.message if hasattr(e, 'message') else str(e)}"
     except Exception as e: print(f"Err getAllVoteCounts {election_id}: {e}"); return None, f"Tech err fetch counts: {e}"
 
-# --- Write Functions (existing create_election_on_chain, new cast_vote_on_chain) ---
+# --- Write Functions ---
 def create_election_on_chain(title: str, description: str, options: list[str], is_active: bool):
     contract = get_contract()
     if not contract: return None, "Blockchain service unavailable."
@@ -107,14 +106,14 @@ def create_election_on_chain(title: str, description: str, options: list[str], i
         signed_tx = w3.eth.account.sign_transaction(unsent_tx, private_key=TRANSACTION_SIGNER_PRIVATE_KEY)
         tx_hash_hexbytes = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
         tx_hash = HexBytes(tx_hash_hexbytes).hex()
-        # print(f"Create election transaction sent. Hash: {tx_hash}") # Less verbose
+        # print(f"Create election transaction sent. Hash: {tx_hash}")
         tx_receipt = w3.eth.wait_for_transaction_receipt(tx_hash_hexbytes, timeout=120)
         if tx_receipt.status == 1:
             logs = []
             try: logs = contract.events.ElectionCreated().process_receipt(tx_receipt)
             except Exception as e_event: print(f"Warning: Could not process ElectionCreated event: {e_event}")
             new_election_id = logs[0]['args']['id'] if logs and len(logs) > 0 and 'id' in logs[0]['args'] else None
-            msg = "Event parsing failed for ElectionCreated" if new_election_id is None and logs is not None else None
+            msg = "Event parsing failed for ElectionCreated" if new_election_id is None and logs is not None else None # Check if logs was None before trying to access
             return {"tx_hash": tx_hash, "status":"success", "receipt": dict(tx_receipt), "election_id": new_election_id}, msg
         else: return None, f"Blockchain transaction failed with status {tx_receipt.status}."
     except ContractLogicError as e: return None, f"Smart contract error: {e.message if hasattr(e, 'message') else str(e)}"
@@ -122,6 +121,32 @@ def create_election_on_chain(title: str, description: str, options: list[str], i
     except Exception as e: print(f"Error calling createElection on chain: {e}\n{traceback.format_exc()}"); return None, f"Technical error: {e}"
 
 def cast_vote_on_chain(election_id: int, option_index: int):
+    contract = get_contract()
+    if not contract: return None, "Blockchain service unavailable."
+    if not SIGNER_ACCOUNT_ADDRESS or not TRANSACTION_SIGNER_PRIVATE_KEY: return None, "Backend signer account not configured."
+    try:
+        nonce = w3.eth.get_transaction_count(SIGNER_ACCOUNT_ADDRESS)
+        txn_params = {'from': SIGNER_ACCOUNT_ADDRESS, 'nonce': nonce}
+        unsent_tx = contract.functions.castVote(election_id, option_index).build_transaction(txn_params)
+        signed_tx = w3.eth.account.sign_transaction(unsent_tx, private_key=TRANSACTION_SIGNER_PRIVATE_KEY)
+        tx_hash_hexbytes = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
+        tx_hash = HexBytes(tx_hash_hexbytes).hex()
+        # print(f"Cast vote transaction sent for election {election_id}, option {option_index}. Hash: {tx_hash}")
+        tx_receipt = w3.eth.wait_for_transaction_receipt(tx_hash_hexbytes, timeout=120)
+        if tx_receipt.status == 1:
+            event_data_dict = None
+            try:
+                logs = contract.events.VoteCast().process_receipt(tx_receipt)
+                if logs and len(logs) > 0 and logs[0]['args']: event_data_dict = dict(logs[0]['args'])
+            except Exception as e_event: print(f"Warning: Could not process VoteCast event: {e_event}")
+            msg = "Event parsing failed for VoteCast" if event_data_dict is None and logs is not None else None
+            return {"tx_hash": tx_hash, "status":"success", "receipt": dict(tx_receipt), "event_data": event_data_dict}, msg
+        else: return None, f"Blockchain transaction failed with status {tx_receipt.status}."
+    except ContractLogicError as e: return None, f"Smart contract error: {e.message if hasattr(e, 'message') else str(e)}"
+    except TransactionNotFound: return None, f"Transaction with hash {tx_hash if 'tx_hash' in locals() else 'unknown'} not found after timeout."
+    except Exception as e: print(f"Error calling castVote on chain for election {election_id}: {e}\n{traceback.format_exc()}"); return None, f"Technical error: {e}"
+
+def toggle_election_status_on_chain(election_id: int):
     contract = get_contract()
     if not contract:
         return None, "Blockchain service not available or contract not loaded."
@@ -134,39 +159,29 @@ def cast_vote_on_chain(election_id: int, option_index: int):
             'from': SIGNER_ACCOUNT_ADDRESS,
             'nonce': nonce,
         }
-
-        unsent_tx = contract.functions.castVote(election_id, option_index).build_transaction(txn_params)
+        unsent_tx = contract.functions.toggleElectionStatus(election_id).build_transaction(txn_params)
         signed_tx = w3.eth.account.sign_transaction(unsent_tx, private_key=TRANSACTION_SIGNER_PRIVATE_KEY)
         tx_hash_hexbytes = w3.eth.send_raw_transaction(signed_tx.rawTransaction)
 
         tx_hash = HexBytes(tx_hash_hexbytes).hex()
-        # print(f"Cast vote transaction sent for election {election_id}, option {option_index}. Hash: {tx_hash}") # Less verbose
+        # print(f"Toggle election status transaction sent for election {election_id}. Hash: {tx_hash}") # Less verbose
 
         tx_receipt = w3.eth.wait_for_transaction_receipt(tx_hash_hexbytes, timeout=120)
 
         if tx_receipt.status == 1:
-            # print(f"Vote transaction successful. Block: {tx_receipt.blockNumber}") # Less verbose
-            event_data_dict = None
-            try:
-                logs = contract.events.VoteCast().process_receipt(tx_receipt)
-                if logs and len(logs) > 0 and logs[0]['args']:
-                    event_data_dict = dict(logs[0]['args'])
-                    # print(f"VoteCast event: {event_data_dict}") # Less verbose
-            except Exception as e_event:
-                print(f"Warning: Could not process VoteCast event: {e_event}")
-
-            msg = "Event parsing failed for VoteCast" if event_data_dict is None and logs is not None else None
-            return {"tx_hash": tx_hash, "status":"success", "receipt": dict(tx_receipt), "event_data": event_data_dict}, msg
+            # print(f"Toggle status transaction successful for election {election_id}. Block: {tx_receipt.blockNumber}") # Less verbose
+            # No specific event for toggleElectionStatus in the current smart contract
+            return {"tx_hash": tx_hash, "status": "success", "receipt": dict(tx_receipt)}, None
         else:
-            # print(f"Vote transaction failed. Receipt: {tx_receipt}") # Less verbose
+            # print(f"Toggle status transaction failed for election {election_id}. Receipt: {tx_receipt}") # Less verbose
             return None, f"Blockchain transaction failed with status {tx_receipt.status}."
 
     except ContractLogicError as e:
-        print(f"Contract revert during castVote for election {election_id}: {e}")
+        print(f"Contract revert during toggleElectionStatus for election {election_id}: {e}")
         return None, f"Smart contract error: {e.message if hasattr(e, 'message') else str(e)}"
     except TransactionNotFound:
-        print(f"Transaction with hash {tx_hash if 'tx_hash' in locals() else 'unknown'} not found after timeout for castVote.")
+        print(f"Transaction with hash {tx_hash if 'tx_hash' in locals() else 'unknown'} not found after timeout for toggle status.")
         return None, "Transaction not found after timeout, it might have been dropped."
     except Exception as e:
-        print(f"Error calling castVote on chain for election {election_id}: {e}\n{traceback.format_exc()}")
-        return None, f"Technical error casting vote on blockchain: {str(e)}"
+        print(f"Error calling toggleElectionStatus on chain for election {election_id}: {e}\n{traceback.format_exc()}")
+        return None, f"Technical error toggling election status on blockchain: {str(e)}"
