@@ -45,17 +45,47 @@ def get_user_route(username):
             "id": user.id,
             "username": user.username,
             "email": user.email,
-            "biometric_template_id": user.biometric_template_id
+            "biometric_public_key": user.biometric_public_key,
+            "biometrics_enabled": user.biometrics_enabled
         }), 200
     else:
         return jsonify({"success": False, "message": "User not found"}), 404
+
+@app.route('/users/<int:user_id>/biometrics', methods=['POST'])
+def add_user_biometric_key(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"success": False, "message": "User not found"}), 404
+
+    data = request.get_json()
+    if not data or not data.get('biometric_public_key'):
+        return jsonify({"success": False, "message": "Missing biometric_public_key"}), 400
+
+    biometric_key = data.get('biometric_public_key')
+
+    # Basic validation for the key (presence and type)
+    if not isinstance(biometric_key, str) or len(biometric_key) == 0:
+        return jsonify({"success": False, "message": "Invalid biometric_public_key format or empty"}), 400
+
+    user.biometric_public_key = biometric_key
+    user.biometrics_enabled = True
+
+    try:
+        db.session.commit()
+        return jsonify({"success": True, "message": "Biometric key added and biometrics enabled successfully."}), 200
+    except Exception as e:
+        db.session.rollback()
+        # current_app.logger.error(f"Database error while adding biometric key: {str(e)}") # current_app not available by default
+        app.logger.error(f"Database error while adding biometric key: {str(e)}") # Use app.logger
+        return jsonify({"success": False, "message": f"Database error: {str(e)}"}), 500
+
 
 # CLI command to initialize the database
 @app.cli.command('init-db')
 def init_db_command():
     """Creates the database tables."""
     db.create_all()
-    # print('Initialized the database.') # Optional: Add print for CLI feedback
+    print('Initialized the database.')
 
 if __name__ == '__main__':
     app.run(debug=True)
