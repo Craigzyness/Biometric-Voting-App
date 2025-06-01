@@ -1,10 +1,10 @@
-from flask import Flask, request, jsonify, session, current_app, Response
+from flask import Flask, request, jsonify, session, current_app, Response, flash, redirect, url_for # Added flash, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.exc import IntegrityError
 import os
 import uuid
 from datetime import datetime, timedelta
-import traceback # For more detailed error logging if needed
+import traceback
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -12,8 +12,10 @@ from cryptography.hazmat.primitives.serialization import load_der_public_key
 from cryptography.exceptions import InvalidSignature
 import base64
 
-from flask_admin import Admin, AdminIndexView, expose
+from flask_admin import Admin, AdminIndexView, expose, BaseView # Added BaseView
 from flask_admin.contrib.sqla import ModelView
+# from flask_admin.form import BaseForm # Not directly used in custom view's simple form
+# from wtforms import StringField, TextAreaField, BooleanField, FieldList, FormField # Not directly used
 
 from . import blockchain_service
 
@@ -23,14 +25,84 @@ ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'secret')
 def check_auth(username, password): return username == ADMIN_USERNAME and password == ADMIN_PASSWORD
 def authenticate(): return Response('Login Required', 401, {'WWW-Authenticate': 'Basic realm="Login Required"'})
 
-class SecureAdminIndexView(AdminIndexView):
-    def is_accessible(self): auth = request.authorization; return auth and check_auth(auth.username, auth.password)
-    def inaccessible_callback(self, name, **kwargs): return authenticate()
+class SecureViewMixin:
+    def is_accessible(self):
+        auth = request.authorization
+        return auth and check_auth(auth.username, auth.password)
+    def inaccessible_callback(self, name, **kwargs):
+        return authenticate()
 
-class SecureModelView(ModelView):
-    def is_accessible(self): auth = request.authorization; return auth and check_auth(auth.username, auth.password)
-    def inaccessible_callback(self, name, **kwargs): return authenticate()
+class SecureAdminIndexView(SecureViewMixin, AdminIndexView):
+    pass
 
+class SecureModelView(SecureViewMixin, ModelView):
+    pass
+
+# --- Custom Admin View for Blockchain Elections ---
+class BlockchainPollAdminView(SecureViewMixin, BaseView):
+    @expose('/')
+    def index(self):
+        elections_data = []
+        error_message = None
+        if blockchain_service.is_connected():
+            count, error = blockchain_service.get_elections_count_from_chain()
+            if error:
+                error_message = f"Error fetching election count: {error}"
+            elif count is not None:
+                for i in range(1, count + 1):
+                    poll_detail, detail_error = blockchain_service.get_election_details_from_chain(i)
+                    if poll_detail:
+                        vote_counts, vc_error = blockchain_service.get_all_vote_counts_for_election_from_chain(i)
+                        if vc_error: poll_detail['vote_counts_str'] = "Error fetching"
+                        else: poll_detail['vote_counts_str'] = ", ".join(map(str, vote_counts or []))
+                        elections_data.append(poll_detail)
+                    elif detail_error:
+                         current_app.logger.warning(f"Admin: Could not fetch details for election ID {i}: {detail_error}")
+        else:
+            error_message = "Blockchain service not available."
+
+        if error_message:
+            flash(error_message, 'error')
+
+        return self.render('admin/blockchain_poll_list.html', elections=elections_data)
+
+    @expose('/create', methods=('GET', 'POST'))
+    def create_view(self):
+        if request.method == 'POST':
+            title = request.form.get('title')
+            description = request.form.get('description', '')
+            options_str = request.form.get('options', '')
+            is_active = request.form.get('is_active') == 'on'
+
+            options = [opt.strip() for opt in options_str.split(',') if opt.strip()]
+
+            if not title or len(options) < 2:
+                flash('Title and at least two comma-separated options are required.', 'error')
+            else:
+                result, error = blockchain_service.create_election_on_chain(title, description, options, is_active)
+                if error:
+                    flash(f'Error creating election on blockchain: {error}', 'error')
+                else:
+                    tx_hash = result.get("tx_hash", "N/A")
+                    new_id = result.get("election_id", "N/A (check logs)")
+                    flash(f'Election creation transaction sent! TxHash: {tx_hash}, New ID (from event): {new_id}', 'success')
+                    return redirect(url_for('.index'))
+
+        return self.render('admin/blockchain_poll_create.html')
+
+    @expose('/toggle_status/<int:election_id>', methods=('POST',))
+    def toggle_status_view(self, election_id):
+        # Placeholder for actual on-chain toggle status function
+        # result, error = blockchain_service.toggle_election_status_on_chain(election_id)
+        # if error: flash(f"Error toggling status for {election_id}: {error}", 'error')
+        # else: flash(f"Toggle status transaction sent for election {election_id}.", 'success')
+        flash(f"Placeholder: Would toggle status for election {election_id}. Functionality requires blockchain_service update.", 'info')
+        return redirect(url_for('.index'))
+
+    def is_visible(self):
+        return True
+
+# --- App Setup ---
 app = Flask(__name__)
 basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'voting_app.db')
@@ -39,7 +111,8 @@ app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'dev_secret_key_fo
 app.config['FLASK_ADMIN_SWATCH'] = 'cerulean'
 
 db = SQLAlchemy(app)
-admin = Admin(app, name='BiometricVotingAdmin', template_mode='bootstrap3', index_view=SecureAdminIndexView())
+admin = Admin(name='BiometricVotingAdmin', template_mode='bootstrap3', index_view=SecureAdminIndexView(url='/admin'))
+admin.init_app(app)
 
 with app.app_context():
     if not blockchain_service.init_blockchain_connection():
@@ -55,19 +128,23 @@ from .auth import get_user_by_username as auth_get_user_by_username
 
 class UserAdminView(SecureModelView):
     column_list = ('id', 'username', 'email', 'biometrics_enabled'); column_searchable_list = ('username', 'email'); column_filters = ('biometrics_enabled',); form_excluded_columns = ('password_hash', 'biometric_public_key', 'votes'); can_create = False; can_delete = False; can_edit = True
-class PollAdminView(SecureModelView):
+
+class SQLPollAdminView(SecureModelView): # Renamed to distinguish
     column_list = ('id', 'title', 'start_date', 'end_date', 'created_at'); column_searchable_list = ('title',); column_filters = ('start_date', 'end_date'); form_columns = ('title', 'description', 'options', 'start_date', 'end_date'); can_create = True; can_edit = True; can_delete = True
+    def __init__(self, session, **kwargs): # Explicitly pass model
+        super(SQLPollAdminView, self).__init__(Poll, session, name="SQL Polls", **kwargs)
+
 class VoteAdminView(SecureModelView):
     column_list = ('id', 'voter.username', 'poll.title', 'selected_option_id', 'timestamp'); column_searchable_list = ('voter.username', 'poll.title'); column_filters = ('timestamp', 'poll_id'); can_create = False; can_edit = False; can_delete = False
 
 admin.add_view(UserAdminView(User, db.session))
-admin.add_view(PollAdminView(Poll, db.session))
+admin.add_view(SQLPollAdminView(db.session))
+admin.add_view(BlockchainPollAdminView(name="Blockchain Elections", endpoint="blockchain-elections"))
 admin.add_view(VoteAdminView(Vote, db.session))
 
-# --- API Routes ---
+# --- API Routes (condensed) ---
 @app.route('/')
 def hello_world(): return 'Hello, Backend World!'
-# ... (User, Auth, Biometric routes - condensed) ...
 @app.route('/register', methods=['POST'])
 def register_route():
     data = request.get_json();
@@ -124,8 +201,6 @@ def biometric_login():
         return jsonify({"success": True, "message": "Biometric login successful"}), 200 # TODO: Issue session token
     except InvalidSignature: current_app.logger.warning(f"Invalid signature: {username}"); return jsonify({"success": False, "message": "Invalid signature"}), 401
     except Exception as e: current_app.logger.error(f"Sig verification error {username}: {str(e)}"); return jsonify({"success": False, "message": "Sig verification error"}), 500
-
-# --- Poll/Election APIs ---
 @app.route('/polls', methods=['POST'])
 def create_poll_on_blockchain():
     if not blockchain_service.is_connected(): return jsonify({"success": False, "message": "Blockchain service unavailable."}), 503
@@ -142,7 +217,6 @@ def create_poll_on_blockchain():
         if "Smart contract error" in error or "Blockchain transaction failed" in error: return jsonify({"success": False, "message": "Blockchain contract/tx error."}), 500
         return jsonify({"success": False, "message": error}), 500
     return jsonify({"success": True, "message": "Poll creation tx sent.", "data": result}), 202
-
 @app.route('/polls', methods=['GET'])
 def get_blockchain_polls():
     if not blockchain_service.is_connected(): return jsonify({"success": False, "message": "Blockchain service unavailable."}), 503
@@ -155,9 +229,8 @@ def get_blockchain_polls():
         if poll_data: all_polls_data.append(poll_data)
         elif error_detail: current_app.logger.warning(f"Could not fetch details for election ID {i}: {error_detail}")
     return jsonify({"success": True, "polls": all_polls_data}), 200
-
 @app.route('/polls/<int:poll_id>', methods=['GET'])
-def get_blockchain_poll_detail(poll_id): # Renamed parameter to poll_id from election_id_on_chain for consistency with route
+def get_blockchain_poll_detail(poll_id):
     if not blockchain_service.is_connected(): return jsonify({"success": False, "message": "Blockchain service unavailable."}), 503
     if poll_id <= 0: return jsonify({"success": False, "message": "Invalid poll ID."}), 400
     poll_data, error = blockchain_service.get_election_details_from_chain(poll_id)
@@ -170,75 +243,37 @@ def get_blockchain_poll_detail(poll_id): # Renamed parameter to poll_id from ele
         else: poll_data['vote_counts'] = vote_counts
         return jsonify({"success": True, "poll": poll_data}), 200
     else: return jsonify({"success": False, "message": "Poll not found or error."}), 404
-
-# --- Vote Casting API (Now to Blockchain) ---
 @app.route('/polls/<int:election_id_on_chain>/vote', methods=['POST'])
 def cast_vote_on_blockchain(election_id_on_chain):
-    if not blockchain_service.is_connected():
-        return jsonify({"success": False, "message": "Blockchain service not available."}), 503
-
+    if not blockchain_service.is_connected(): return jsonify({"success": False, "message": "Blockchain service unavailable."}), 503
     data = request.get_json()
-    # selected_option_id from request is the 0-based index for the smart contract
-    if not data or 'user_id' not in data or 'selected_option_id' not in data:
-        return jsonify({"success": False, "message": "Missing user_id or selected_option_id (option index)"}), 400
-
-    app_user_id = data.get('user_id')
-    option_index = data.get('selected_option_id')
-
-    user = User.query.get(app_user_id) # Application-level user
-    if not user:
-        return jsonify({"success": False, "message": "Application user not found."}), 404
-
-    # Validate option_index is an integer (it's used directly with the contract)
-    if not isinstance(option_index, int) or option_index < 0:
-        return jsonify({"success": False, "message": "Invalid option_index: must be a non-negative integer."}), 400
-
-    # Optional: Fetch election details to validate option_index against options length and check isActive
-    # This is good practice but adds an extra read call before the write.
-    # The smart contract itself also performs these checks.
-    # For PoC, we can rely on smart contract checks for active status and option range.
-    # However, it's good to log the attempt with validated data if possible.
-    current_app.logger.info(f"Attempting blockchain vote: user {app_user_id}, election {election_id_on_chain}, option_idx {option_index}")
-
-    # Application-level check for double voting (against SQL DB)
+    if not data or 'user_id' not in data or 'selected_option_id' not in data: return jsonify({"success": False, "message": "Missing user_id or selected_option_id (option index)"}), 400
+    app_user_id = data.get('user_id'); option_index_from_request = data.get('selected_option_id')
+    user = User.query.get(app_user_id)
+    if not user: return jsonify({"success": False, "message": "Application user not found."}), 404
+    election_on_chain, error = blockchain_service.get_election_details_from_chain(election_id_on_chain)
+    if error: return jsonify({"success": False, "message": f"Blockchain poll details error: {error}"}), 404
+    if not election_on_chain: return jsonify({"success": False, "message": "Election not found on blockchain."}), 404
+    if not election_on_chain['isActive']: return jsonify({"success": False, "message": "Election not active on blockchain."}), 403
+    if not isinstance(option_index_from_request, int) or option_index_from_request < 0 or option_index_from_request >= len(election_on_chain['options']):
+        return jsonify({"success": False, "message": "Invalid option index."}), 400
     existing_vote_sql = Vote.query.filter_by(user_id=app_user_id, poll_id=election_id_on_chain).first()
-    if existing_vote_sql:
-        return jsonify({"success": False, "message": "User has already voted in this poll (application record)."}), 409
-
-    tx_info, error = blockchain_service.cast_vote_on_chain(
-        election_id=election_id_on_chain,
-        option_index=option_index
-    )
-
+    if existing_vote_sql: return jsonify({"success": False, "message": "Already voted (application record)."}), 409
+    current_app.logger.info(f"Attempting blockchain vote: app_user {app_user_id}, election {election_id_on_chain}, option_idx {option_index_from_request}")
+    tx_info, error = blockchain_service.cast_vote_on_chain(election_id=election_id_on_chain, option_index=option_index_from_request)
     if error:
         current_app.logger.error(f"Error casting vote on blockchain: {error}")
-        # Smart contract errors (reverts) are often in the error message from blockchain_service
-        if "Smart contract error" in error:
-             return jsonify({"success": False, "message": error}), 400 # e.g., already voted on chain, inactive poll
-        return jsonify({"success": False, "message": "Failed to cast vote on blockchain."}), 500
-
-    # If blockchain transaction was accepted (202), record in SQL DB.
-    new_vote_sql = Vote(user_id=app_user_id, poll_id=election_id_on_chain, selected_option_id=option_index) # Storing index
+        if "Smart contract error" in error: return jsonify({"success": False, "message": f"Blockchain voting error: {error}"}), 400
+        return jsonify({"success": False, "message": error}), 500
+    new_vote_sql = Vote(user_id=app_user_id, poll_id=election_id_on_chain, selected_option_id=option_index_from_request)
     try:
-        db.session.add(new_vote_sql)
-        db.session.commit()
-        current_app.logger.info(f"Blockchain vote by app_user_id {app_user_id} for election {election_id_on_chain} also recorded in SQL DB.")
-    except IntegrityError:
-        db.session.rollback()
-        current_app.logger.warning(f"SQL IntegrityError after blockchain vote for user {app_user_id}, poll {election_id_on_chain}.")
-        # Blockchain vote might have succeeded, but SQL failed (e.g. race condition if not for this check)
-        # Return success from blockchain, but acknowledge potential inconsistency.
-        return jsonify({"success": True, "message": "Vote sent to blockchain, but local record failed (Integrity).", "data": tx_info}), 207
+        db.session.add(new_vote_sql); db.session.commit()
+        current_app.logger.info(f"Vote by app_user {app_user_id} for election {election_id_on_chain} also recorded in SQL.")
+    except IntegrityError: db.session.rollback(); current_app.logger.warning(f"IntegrityError for SQL vote record user {app_user_id}, poll {election_id_on_chain}.")
     except Exception as e_sql:
-        db.session.rollback()
-        current_app.logger.error(f"SQL Error after successful blockchain vote: {str(e_sql)}. Vote for user {app_user_id}, poll {election_id_on_chain} NOT recorded in SQL.")
-        return jsonify({"success": True, "message": "Vote sent to blockchain, but local record failed. Check logs.", "data": tx_info}), 207
-
-    return jsonify({
-        "success": True,
-        "message": "Vote transaction sent to blockchain and recorded locally.",
-        "data": tx_info
-    }), 202
+        db.session.rollback(); current_app.logger.error(f"SQL Error post-blockchain vote: {str(e_sql)}. User {app_user_id}, poll {election_id_on_chain} NOT in SQL.")
+        return jsonify({"success": True, "message": "Vote tx sent, local record failed. Check logs.", "data": tx_info}), 207
+    return jsonify({"success": True, "message": "Vote tx sent and recorded locally.", "data": tx_info}), 202
 
 @app.cli.command('init-db')
 def init_db_command(): db.create_all(); print('Initialized the database.')

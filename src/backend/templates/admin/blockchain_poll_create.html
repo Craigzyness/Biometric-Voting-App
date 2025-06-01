@@ -1,0 +1,33 @@
+{% extends 'admin/master.html' %}
+{% block body %}
+  <h1>Create New Blockchain Election</h1>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+  <form method="POST">
+    <div class="form-group">
+      <label for="title">Title</label>
+      <input type="text" class="form-control" id="title" name="title" required>
+    </div>
+    <div class="form-group">
+      <label for="description">Description</label>
+      <textarea class="form-control" id="description" name="description"></textarea>
+    </div>
+    <div class="form-group">
+      <label for="options">Options (comma-separated)</label>
+      <input type="text" class="form-control" id="options" name="options" placeholder="Option A, Option B, Option C" required>
+      <small class="form-text text-muted">Enter at least two options, separated by commas.</small>
+    </div>
+    <div class="form-check">
+      <input type="checkbox" class="form-check-input" id="is_active" name="is_active" checked>
+      <label class="form-check-label" for="is_active">Is Active?</label>
+    </div>
+    <br/>
+    <button type="submit" class="btn btn-primary">Create Election on Blockchain</button>
+    <a href="{{ url_for('.index') }}" class="btn btn-default">Cancel</a>
+  </form>
+{% endblock %}
