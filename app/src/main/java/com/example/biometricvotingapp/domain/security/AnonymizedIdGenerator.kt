@@ -26,6 +26,25 @@ import java.security.MessageDigest
  * This implementation is for demonstration within the project's development lifecycle.
  * Ensure all aspects align with `docs/security_requirements.md`.
  * !! WARNING !! - EXPERT REVIEW REQUIRED !! WARNING !!
+ *
+ * Internal Review Notes (Not a substitute for expert review):
+ * - Hash Algorithm: SHA-256 is a standard, secure cryptographic hash function.
+ * - Salt (`SecureSaltProvider`): The use of a salt is crucial for mitigating pre-computation attacks
+ *   (e.g., rainbow tables) on the hashed ID. The security and proper generation/storage of this salt
+ *   by `SecureSaltProvider` (implementation not visible here) is critical.
+ * - Stable Identifier (`StableIdentifierProvider`): This ensures the ID remains consistent for a given
+ *   app installation. Its stability, uniqueness, and resistance to tampering are important.
+ *   The method of generating this stable ID by `StableIdentifierProvider` (implementation not visible here)
+ *   is a key factor.
+ * - Combination: The current method combines the stable identifier and salt, then hashes them:
+ *   ID = SHA256(stableIdentifier + salt). This is a common and generally sound pattern for creating
+ *   derived identifiers.
+ * - Biometric Gatekeeper: Biometric authentication acts as a gatekeeper to allow the generation/use of this
+ *   ID, rather than directly deriving the ID from biometric data or using BiometricPrompt.CryptoObject
+ *   for this specific ID generation.
+ * - Recommendation: The call for expert review remains paramount, especially concerning the actual
+ *   implementations of `SecureSaltProvider` and `StableIdentifierProvider`, and the overall
+ *   anonymity and security guarantees in the context of the application's threat model.
  */
 object AnonymizedIdGenerator {
 

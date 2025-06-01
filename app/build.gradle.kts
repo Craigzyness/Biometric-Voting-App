@@ -81,10 +81,14 @@ dependencies {
 
     // Testing
     testImplementation(libs.junit)
-    testImplementation(libs.mockk.android)
+    testImplementation("io.mockk:mockk:1.13.8") // Using version from libs.versions.toml (mockk = "1.13.8")
     testImplementation(libs.mockk.agent) // For final class mocking if needed
     testImplementation(libs.robolectric)
     testImplementation(libs.kotlinx.coroutines.test)
+    // mockk-android is for androidTest, not testImplementation here.
+    // If we need specific android mocking utilities for unit tests (e.g. with Robolectric),
+    // they might come from mockk-android, but standard mocking is io.mockk:mockk.
+    // For now, this setup should be fine for the planned tests.
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

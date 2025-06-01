@@ -43,8 +43,8 @@ import com.example.biometricvotingapp.domain.model.Election // Import the Electi
  * For MVP, this list is hardcoded.
  */
 
-// TODO: In a real app, this list would come from a ViewModel, which fetches it from a repository/backend.
-// For MVP, this list is fetched from the backend.
+// For MVP, this list is fetched from the backend via VotingRepository.
+// TODO: In a full app, this would ideally involve a ViewModel.
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

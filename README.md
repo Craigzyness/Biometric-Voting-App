@@ -51,9 +51,11 @@ Create a modern, user-friendly voting system that uses biometrics (fingerprint, 
 biometric-voting-app/
 │
 ├── backend/                # API, business logic, DB models
-│   └── tests/
-├── frontend/               # Web or mobile client
-│   └── tests/
+│   └── tests/              # Backend tests (e.g., Jest, Pytest)
+├── app/                    # Android mobile client
+│   ├── src/main/           # Main application source code
+│   ├── src/test/           # Unit tests
+│   └── src/androidTest/    # Instrumented tests
 ├── docs/                   # Documentation, architecture, diagrams
 ├── .gitignore
 ├── README.md
