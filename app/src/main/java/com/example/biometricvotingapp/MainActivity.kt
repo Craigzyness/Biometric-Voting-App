@@ -83,8 +83,9 @@ fun AppNavigator() {
             )
         }
         is Screen.ElectionList -> {
+            // val votingRepository = remember { ... } // This instantiation is no longer needed here
             ElectionListScreen(
-                // elections = getSampleElections(), // Removed, fetched from network now
+                // The viewModel is now obtained by default in ElectionListScreen
                 onElectionClicked = { selectedElection ->
                     Log.d("AppNavigator", "Election clicked: ${selectedElection.title}")
                     if (currentAnonymizedId == null) {

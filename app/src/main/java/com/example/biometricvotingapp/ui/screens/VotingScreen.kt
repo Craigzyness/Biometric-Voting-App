@@ -14,34 +14,79 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
-import com.example.biometricvotingapp.data.network.ApiService
-import com.example.biometricvotingapp.data.network.dto.VoteRequest
-import com.example.biometricvotingapp.data.repository.VotingRepository
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.biometricvotingapp.domain.model.Election
+import com.example.biometricvotingapp.ui.screens.voting.VotingUiState
+import com.example.biometricvotingapp.ui.screens.voting.VotingViewModel
+import com.example.biometricvotingapp.ui.screens.voting.VotingViewEvent
 import com.example.biometricvotingapp.utils.BiometricAuthManager
 import com.example.biometricvotingapp.utils.BiometricAvailabilityStatus
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VotingScreen(
-    anonymizedVoterId: String, // <<<< Added this parameter
+    anonymizedVoterId: String,
     election: Election,
-    // Renamed and repurposed: called after biometric success AND backend success
-    onVoteConfirmedAndSubmitted: (election: Election, selectedOption: String) -> Unit,
-    onNavigateBack: () -> Unit
+    onVoteConfirmedAndSubmitted: (election: Election, selectedOption: String) -> Unit, // For navigation
+    onNavigateBack: () -> Unit,
+    viewModel: VotingViewModel = viewModel() // Obtain ViewModel instance
 ) {
     val context = LocalContext.current
     val activity = LocalContext.current as? FragmentActivity
 
-    val biometricAuthManager = remember { BiometricAuthManager(context) }
-    val votingRepository = remember { VotingRepository(ApiService.instance) }
-    val coroutineScope = rememberCoroutineScope()
+    val uiState by viewModel.uiState.collectAsState()
+    var selectedOptionState by remember { mutableStateOf<String?>(null) } // Local state for radio button selection
 
-    var selectedOption by remember { mutableStateOf<String?>(null) }
-    var isLoading by remember { mutableStateOf(false) }
-    var statusMessage by remember { mutableStateOf<String?>(null) }
-    var voteSuccessfullyCast by remember { mutableStateOf(false) } // New state variable
+    // Handle one-time events from ViewModel
+    LaunchedEffect(key1 = viewModel.eventFlow) {
+        viewModel.eventFlow.collectLatest { event ->
+            when (event) {
+                is VotingViewEvent.ShowBiometricPrompt -> {
+                    if (activity != null && selectedOptionState != null) {
+                        val biometricAuthManager = BiometricAuthManager(context) // Could be member
+                        // Check for biometric availability before prompting
+                         when (biometricAuthManager.canAuthenticateWithBiometrics()) {
+                            BiometricAvailabilityStatus.AVAILABLE -> {
+                                biometricAuthManager.promptForVoteConfirmation(
+                                    activity = activity,
+                                    electionTitle = election.title,
+                                    selectedOption = selectedOptionState!!, // Safe due to check
+                                    onSuccess = { authResult ->
+                                        viewModel.onBiometricAuthenticationSuccess(authResult)
+                                    },
+                                    onError = { errorCode, errString ->
+                                        viewModel.onBiometricAuthenticationError(errorCode, errString)
+                                    },
+                                    onFailed = {
+                                        viewModel.onBiometricAuthenticationFailed()
+                                    }
+                                )
+                            }
+                            BiometricAvailabilityStatus.NONE_ENROLLED -> {
+                                viewModel.onBiometricAuthenticationError(-1, "No fingerprints enrolled. Please enroll to vote.")
+                            }
+                            else -> {
+                                val availability = biometricAuthManager.canAuthenticateWithBiometrics()
+                                viewModel.onBiometricAuthenticationError(-1, "Biometric authentication not available ($availability).")
+                            }
+                        }
+                    } else if (selectedOptionState == null) {
+                        // This case should ideally be handled by button enabled state, but as a fallback:
+                        viewModel.onBiometricAuthenticationError(-1, "Please select an option first.")
+                    } else { // activity == null
+                        viewModel.onBiometricAuthenticationError(-1, "Activity context not available for BiometricPrompt.")
+                    }
+                }
+                is VotingViewEvent.VoteSubmissionSuccessAndNavigate -> {
+                    // selectedOptionState should not be null here if flow is correct
+                    onVoteConfirmedAndSubmitted(election, selectedOptionState ?: "")
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -88,16 +133,21 @@ fun VotingScreen(
                             .fillMaxWidth()
                             .height(56.dp)
                             .selectable(
-                                selected = (selectedOption == optionText),
-                                onClick = { selectedOption = optionText; statusMessage = null /* Clear message on new selection */ },
+                                selected = (selectedOptionState == optionText),
+                                onClick = {
+                                    selectedOptionState = optionText
+                                    if (uiState is VotingUiState.Error || uiState is VotingUiState.Success) {
+                                        viewModel.resetStateToIdle() // Reset message if user changes option after an error/success
+                                    }
+                                },
                                 role = Role.RadioButton
                             )
                             .padding(horizontal = 16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
-                            selected = (selectedOption == optionText),
-                            onClick = null
+                            selected = (selectedOptionState == optionText),
+                            onClick = null // Recommended for accessibility with selectable parent
                         )
                         Text(
                             text = optionText,
@@ -112,96 +162,39 @@ fun VotingScreen(
 
             Button(
                 onClick = {
-                    val currentSelectedOption = selectedOption
-                    if (currentSelectedOption == null) {
-                        statusMessage = "Please select an option before casting your vote."
-                        return@Button
-                    }
-                    if (activity == null) {
-                        statusMessage = "Error: Cannot perform biometric authentication."
-                        Log.e("VotingScreen", "FragmentActivity context is null for biometrics.")
-                        return@Button
-                    }
-
-                    isLoading = true
-                    statusMessage = null
-
-                    when (biometricAuthManager.canAuthenticateWithBiometrics()) {
-                        BiometricAvailabilityStatus.AVAILABLE -> {
-                            biometricAuthManager.promptForVoteConfirmation(
-                                activity = activity,
-                                electionTitle = election.title,
-                                selectedOption = currentSelectedOption,
-                                onSuccess = { authResult ->
-                                    Log.i("VotingScreen", "Vote Biometric Auth Succeeded. AuthResult: $authResult. Submitting to server...")
-                                    // isLoading is already true from the button click for biometrics.
-                                    // It will be set to false after network call.
-
-                                    coroutineScope.launch {
-                                        val voteRequest = VoteRequest(
-                                            anonymizedVoterId = anonymizedVoterId, // Use the passed-in ID
-                                            electionId = election.id,
-                                            selectedOption = currentSelectedOption
-                                        )
-                                        val voteResult = votingRepository.submitVote(voteRequest)
-                                        isLoading = false // Network call finished
-
-                                        voteResult.fold(
-                                            onSuccess = { backendResponse ->
-                                                voteSuccessfullyCast = true
-                                                statusMessage = backendResponse.message // "Vote submitted successfully..."
-                                                Log.i("VotingScreen", "Backend vote submission successful: ${backendResponse.message}")
-                                                onVoteConfirmedAndSubmitted(election, currentSelectedOption) // Navigate on success
-                                            },
-                                            onFailure = { error ->
-                                                // voteSuccessfullyCast remains false
-                                                statusMessage = "Error: Vote Submission Failed - ${error.message}" // Ensure "Error" is present
-                                                Log.e("VotingScreen", "Backend vote submission error: ${error.message}")
-                                                // Do not navigate. User can potentially retry if the button is re-enabled.
-                                            }
-                                        )
-                                    }
-                                },
-                                onError = { errString ->
-                                    isLoading = false // Biometric error
-                                    statusMessage = "Vote Confirmation Error: $errString"
-                                    Log.e("VotingScreen", "Vote Biometric Auth Error: $errString")
-                                },
-                                onFailed = {
-                                    isLoading = false
-                                    statusMessage = "Vote Confirmation Failed: Fingerprint not recognized."
-                                    Log.w("VotingScreen", "Vote Biometric Auth Failed.")
-                                }
-                            )
-                        }
-                        BiometricAvailabilityStatus.NONE_ENROLLED -> {
-                            isLoading = false
-                            statusMessage = "Error: No fingerprints enrolled. Please enroll a fingerprint to cast your vote."
-                        }
-                        else -> {
-                            isLoading = false
-                            val availability = biometricAuthManager.canAuthenticateWithBiometrics()
-                            statusMessage = "Error: Biometric authentication not available ($availability)."
-                        }
+                    selectedOptionState?.let { option ->
+                        viewModel.onCastVoteClicked(anonymizedVoterId, election.id, option)
                     }
                 },
-                enabled = selectedOption != null && !isLoading && !voteSuccessfullyCast,
+                enabled = selectedOptionState != null && uiState !is VotingUiState.Loading && uiState !is VotingUiState.AwaitingBiometrics && uiState !is VotingUiState.Success,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
                     .padding(bottom = 16.dp)
             ) {
-                if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
-                } else {
-                    Text("Cast Vote with Fingerprint")
+                when (uiState) {
+                    is VotingUiState.Loading, VotingUiState.AwaitingBiometrics -> {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
+                    }
+                    else -> Text("Cast Vote with Fingerprint")
                 }
             }
 
-            statusMessage?.let {
+            val currentStatusMessage = when (val state = uiState) {
+                is VotingUiState.Loading -> "Submitting your vote..."
+                is VotingUiState.Error -> state.message
+                is VotingUiState.Success -> state.message // Success message displayed briefly before navigation
+                is VotingUiState.AwaitingBiometrics -> "Please confirm with biometrics..."
+                else -> null // Idle
+            }
+
+            currentStatusMessage?.let { message ->
                 Text(
-                    text = it,
-                    color = if (it.contains("Error", ignoreCase = true) || it.contains("Failed", ignoreCase = true)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                    text = message,
+                    color = when (uiState) {
+                        is VotingUiState.Error -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.primary // Includes Loading, Awaiting, Success
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )

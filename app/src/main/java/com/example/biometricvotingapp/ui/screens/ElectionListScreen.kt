@@ -21,19 +21,15 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.biometricvotingapp.data.network.ApiService
-import com.example.biometricvotingapp.data.network.dto.ElectionDto
-import com.example.biometricvotingapp.data.repository.VotingRepository
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.biometricvotingapp.domain.model.Election // Import the Election data class
+import com.example.biometricvotingapp.ui.screens.electionlist.ElectionListUiState
+import com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewModel
 // import androidx.compose.ui.tooling.preview.Preview // Uncomment for preview
 
 /**
@@ -49,37 +45,20 @@ import com.example.biometricvotingapp.domain.model.Election // Import the Electi
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ElectionListScreen(
-    votingRepository: VotingRepository, // Injected repository
     onElectionClicked: (Election) -> Unit, // Callback when an election is clicked
     // TODO: Add callbacks for other actions like logout, refresh, etc.
     // onLogoutClicked: () -> Unit
+    viewModel: ElectionListViewModel = viewModel() // Obtain ViewModel instance
 ) {
-    var electionsState by remember { mutableStateOf<List<ElectionDto>?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(Unit) { // Fetch elections when the screen is first composed
-        isLoading = true
-        val result = votingRepository.getElections()
-        result.fold(
-            onSuccess = { fetchedElections ->
-                electionsState = fetchedElections
-                isLoading = false
-            },
-            onFailure = { error ->
-                errorMessage = error.message ?: "An unknown error occurred."
-                isLoading = false
-            }
-        )
-    }
+    val uiState by viewModel.uiState.collectAsState()
 
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("Available Elections") })
         }
     ) { paddingValues ->
-        when {
-            isLoading -> {
+        when (val state = uiState) {
+            is ElectionListUiState.Loading -> {
                 Box(
                     modifier = Modifier.fillMaxSize().padding(paddingValues),
                     contentAlignment = Alignment.Center
@@ -87,15 +66,15 @@ fun ElectionListScreen(
                     CircularProgressIndicator()
                 }
             }
-            errorMessage != null -> {
+            is ElectionListUiState.Error -> {
                 Box(
                     modifier = Modifier.fillMaxSize().padding(paddingValues),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(text = "Error: $errorMessage", color = MaterialTheme.colorScheme.error)
+                    Text(text = "Error: ${state.message}", color = MaterialTheme.colorScheme.error)
                 }
             }
-            electionsState.isNullOrEmpty() -> {
+            is ElectionListUiState.Empty -> {
                 Box(
                     modifier = Modifier.fillMaxSize().padding(paddingValues),
                     contentAlignment = Alignment.Center
@@ -103,25 +82,16 @@ fun ElectionListScreen(
                     Text("No elections available at the moment.")
                 }
             }
-            else -> {
+            is ElectionListUiState.Success -> {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(paddingValues)
                         .padding(top = 8.dp, bottom = 8.dp)
                 ) {
-                    items(electionsState!!, key = { electionDto -> electionDto.id }) { electionDto ->
-                        // Map ElectionDto to domain model Election for now
-                        val domainElection = Election(
-                            id = electionDto.id,
-                            title = electionDto.title,
-                            description = electionDto.description ?: "", // Handle possible null description
-                            options = electionDto.options
-                            // Note: electionCode, status, startTimestamp, endTimestamp from DTO are not in domain.model.Election
-                            // If needed, domain.model.Election should be updated or these fields used directly.
-                        )
+                    items(state.elections, key = { election -> election.id }) { domainElection ->
                         ElectionListItem(
-                            election = domainElection,
+                            election = domainElection, // Already a domain model from VM
                             onClicked = { onElectionClicked(domainElection) }
                         )
                         Divider()
