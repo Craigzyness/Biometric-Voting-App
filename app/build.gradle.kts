@@ -8,6 +8,21 @@ android {
     namespace = "com.example.biometricvotingapp"
     compileSdk = 34 // Or latest
 
+    // Signing configurations for APKs
+    // IMPORTANT: These are placeholder values. For actual release builds,
+    // replace these with your real keystore details and ensure the keystore file
+    // is properly secured. It's best practice to load these from a
+    // separate, non-version-controlled file (e.g., keystore.properties)
+    // or environment variables.
+    signingConfigs {
+        create("releasePlaceholder") {
+            storeFile = file("placeholder.keystore") // Placeholder path, replace with actual keystore
+            storePassword = "placeholder_password"   // Placeholder, replace with actual password
+            keyAlias = "placeholder_alias"           // Placeholder, replace with actual alias
+            keyPassword = "placeholder_key_password" // Placeholder, replace with actual key password
+        }
+    }
+
     defaultConfig {
         applicationId = "com.example.biometricvotingapp"
         minSdk = 23
@@ -28,9 +43,15 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Assign the placeholder signing configuration to the release build type.
+            // For actual releases, ensure this uses a properly configured signing config.
+            signingConfig = signingConfigs.getByName("releasePlaceholder")
         }
         debug {
             isMinifyEnabled = false
+            // Debug builds are typically signed with a default debug keystore automatically.
+            // You could also assign a specific signing config here if needed, e.g.:
+            // signingConfig = signingConfigs.getByName("debug") // if you create a 'debug' signingConfig
         }
     }
     compileOptions {
