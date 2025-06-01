@@ -22,11 +22,9 @@ sealed interface ElectionListUiState {
 }
 
 class ElectionListViewModel(
-    private val application: Application // Or just Context if preferred and not using Application specific features
-    // VotingRepository will be instantiated here for MVP simplicity
+    private val application: Application, // Or just Context
+    private val votingRepository: VotingRepository // Injected
 ) : ViewModel() {
-
-    private val votingRepository = VotingRepository(ApiService.instance)
 
     private val _uiState = MutableStateFlow<ElectionListUiState>(ElectionListUiState.Loading)
     val uiState: StateFlow<ElectionListUiState> = _uiState.asStateFlow()

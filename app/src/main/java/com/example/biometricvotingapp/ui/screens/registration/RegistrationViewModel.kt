@@ -17,12 +17,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class RegistrationViewModel(
-    private val application: Application
-    // AnonymizedIdGenerator is an object, can be used directly
-    // VotingRepository will be instantiated here using application context
+    private val application: Application,
+    private val anonymizedIdGenerator: AnonymizedIdGenerator, // Injected
+    private val votingRepository: VotingRepository // Injected
 ) : ViewModel() {
-
-    private val votingRepository = VotingRepository(ApiService.instance) // ApiService.instance uses its own context logic or needs none for instance creation.
 
     private val _uiState = MutableStateFlow<RegistrationUiState>(RegistrationUiState.Idle)
     val uiState: StateFlow<RegistrationUiState> = _uiState.asStateFlow()
@@ -44,9 +42,11 @@ class RegistrationViewModel(
         _uiState.value = RegistrationUiState.Loading("Generating ID and registering with server...")
 
         viewModelScope.launch {
-            val generatedId = AnonymizedIdGenerator.generate(application, authResult) // Pass application context
+            // Use injected anonymizedIdGenerator
+            val generatedId = anonymizedIdGenerator.generate(application, authResult) // Pass application context
             if (generatedId != null) {
                 Log.i("RegistrationViewModel", "Local ID generated: ${generatedId.take(8)}")
+                // Use injected votingRepository
                 val registrationResult = votingRepository.registerVoter(generatedId)
                 registrationResult.fold(
                     onSuccess = { backendResponse ->

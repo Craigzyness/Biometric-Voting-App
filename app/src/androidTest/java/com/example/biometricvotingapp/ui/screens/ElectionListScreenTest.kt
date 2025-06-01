@@ -5,10 +5,16 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.example.biometricvotingapp.data.network.dto.ElectionDto
-import com.example.biometricvotingapp.data.repository.FakeVotingRepository
+// Import DTO if needed for mock data, but VM should expose domain model
 import com.example.biometricvotingapp.domain.model.Election
+import com.example.biometricvotingapp.ui.screens.electionlist.ElectionListUiState
+import com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewModel
 import com.example.biometricvotingapp.ui.theme.BiometricVotingAppTheme
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.spyk
+import io.mockk.verify
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -23,50 +29,49 @@ class ElectionListScreenTest {
     @get:Rule
     val composeTestRule = createComposeRule()
 
-    private lateinit var fakeRepository: FakeVotingRepository
+    private lateinit var mockViewModel: ElectionListViewModel
     private lateinit var mockOnElectionClicked: (Election) -> Unit
+    private val initialUiState = MutableStateFlow<ElectionListUiState>(ElectionListUiState.Loading)
+
 
     @Before
     fun setUp() {
-        // FakeRepository doesn't need a real context for its overridden methods
-        fakeRepository = FakeVotingRepository()
-        mockOnElectionClicked = mock(Function1::class.java) as (Election) -> Unit
+        mockViewModel = mockk(relaxed = true)
+        mockOnElectionClicked = mockk(relaxed = true) // relaxed = true for () -> Unit
+        every { mockViewModel.uiState } returns initialUiState
     }
 
     @Test
     fun electionListScreen_showsLoadingIndicator_initially() {
-        fakeRepository.setElectionsDelay(2000) // Simulate network delay
-
+        // ViewModel is already set to Loading state in setUp via initialUiState
         composeTestRule.setContent {
             BiometricVotingAppTheme {
                 ElectionListScreen(
-                    votingRepository = fakeRepository,
+                    viewModel = mockViewModel,
                     onElectionClicked = mockOnElectionClicked
                 )
             }
         }
-        // Check for the loading indicator (assuming CircularProgressIndicator is used and identifiable)
-        // For now, we'll assume if no data or error is shown, loading is active.
-        // A more robust way is to add a testTag to the CircularProgressIndicator in ElectionListScreen.
-        // For this test, we'll check that data/empty/error messages are NOT yet displayed.
+        // A more direct way to check for loading would be to add a testTag to the CircularProgressIndicator
+        // For now, assert that other states are not visible
         composeTestRule.onNodeWithText("No elections available at the moment.").assertDoesNotExist()
         composeTestRule.onNodeWithText("Error:", substring = true).assertDoesNotExist()
-        // After delay, it might show data or empty, but initially it should be in loading.
-        // This test is basic; a testTag on the indicator is better.
+        // To actually see the indicator, we might need a testTag or a more complex assertion.
+        // This test implicitly verifies loading by checking other states aren't present.
     }
 
     @Test
-    fun electionListScreen_displaysElections_whenRepositoryReturnsData() {
-        val sampleElections = listOf(
-            ElectionDto(id = "1", electionCode = "E1", title = "Election 1 Title", description = "Desc 1", options = listOf("A", "B"), startTimestamp = "", endTimestamp = "", status = "ACTIVE"),
-            ElectionDto(id = "2", electionCode = "E2", title = "Election 2 Title", description = "Desc 2", options = listOf("C", "D"), startTimestamp = "", endTimestamp = "", status = "ACTIVE")
+    fun electionListScreen_displaysElections_whenStateIsSuccess() {
+        val sampleDomainElections = listOf(
+            Election(id = "1", title = "Election 1 Title", description = "Desc 1", options = listOf("A", "B")),
+            Election(id = "2", title = "Election 2 Title", description = "Desc 2", options = listOf("C", "D"))
         )
-        fakeRepository.electionsToReturn = sampleElections
+        initialUiState.value = ElectionListUiState.Success(sampleDomainElections) // Set VM state
 
         composeTestRule.setContent {
             BiometricVotingAppTheme {
                 ElectionListScreen(
-                    votingRepository = fakeRepository,
+                    viewModel = mockViewModel,
                     onElectionClicked = mockOnElectionClicked
                 )
             }
@@ -79,33 +84,32 @@ class ElectionListScreenTest {
     }
 
     @Test
-    fun electionListScreen_showsEmptyMessage_whenRepositoryReturnsEmptyList() {
-        fakeRepository.electionsToReturn = emptyList()
+    fun electionListScreen_showsEmptyMessage_whenStateIsEmpty() {
+        initialUiState.value = ElectionListUiState.Empty // Set VM state
 
         composeTestRule.setContent {
             BiometricVotingAppTheme {
                 ElectionListScreen(
-                    votingRepository = fakeRepository,
+                    viewModel = mockViewModel,
                     onElectionClicked = mockOnElectionClicked
                 )
             }
         }
 
         composeTestRule.onNodeWithText("No elections available at the moment.").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Election 1 Title").assertDoesNotExist() // Example from previous test
+        composeTestRule.onNodeWithText("Election 1 Title").assertDoesNotExist()
         composeTestRule.onNodeWithText("Error:", substring = true).assertDoesNotExist()
     }
 
     @Test
-    fun electionListScreen_showsErrorMessage_whenRepositoryReturnsError() {
-        val errorMessage = "Fake network error occurred"
-        fakeRepository.shouldReturnError = true
-        fakeRepository.generalErrorMessage = errorMessage
+    fun electionListScreen_showsErrorMessage_whenStateIsError() {
+        val errorMessage = "Simulated network error"
+        initialUiState.value = ElectionListUiState.Error(errorMessage) // Set VM state
 
         composeTestRule.setContent {
             BiometricVotingAppTheme {
                 ElectionListScreen(
-                    votingRepository = fakeRepository,
+                    viewModel = mockViewModel,
                     onElectionClicked = mockOnElectionClicked
                 )
             }
@@ -118,17 +122,18 @@ class ElectionListScreenTest {
 
     @Test
     fun electionListScreen_callsOnElectionClicked_whenItemIsClicked() {
-        val electionIdToClick = "election_click_id_1"
-        val sampleElections = listOf(
-            ElectionDto(id = electionIdToClick, electionCode = "E_CLICK", title = "Clickable Election", description = "Desc Click", options = listOf("X", "Y"), startTimestamp = "", endTimestamp = "", status = "ACTIVE")
-        )
-        fakeRepository.electionsToReturn = sampleElections
+        val electionToClick = Election(id = "election_click_id_1", title = "Clickable Election", description = "Desc Click", options = listOf("X", "Y"))
+        val sampleDomainElections = listOf(electionToClick)
+
+        initialUiState.value = ElectionListUiState.Success(sampleDomainElections) // Set VM state
+        val spiedOnElectionClicked = spyk(mockOnElectionClicked)
+
 
         composeTestRule.setContent {
             BiometricVotingAppTheme {
                 ElectionListScreen(
-                    votingRepository = fakeRepository,
-                    onElectionClicked = mockOnElectionClicked
+                    viewModel = mockViewModel,
+                    onElectionClicked = spiedOnElectionClicked
                 )
             }
         }
@@ -136,14 +141,6 @@ class ElectionListScreenTest {
         composeTestRule.onNodeWithText("Clickable Election").assertIsDisplayed()
         composeTestRule.onNodeWithText("Clickable Election").performClick()
 
-        // Verify that the onElectionClicked lambda was called with the correct Election domain model
-        // The mapping in ElectionListScreen converts ElectionDto to Election domain model
-        val expectedDomainElection = Election(
-            id = electionIdToClick,
-            title = "Clickable Election",
-            description = "Desc Click",
-            options = listOf("X", "Y")
-        )
-        verify(mockOnElectionClicked).invoke(expectedDomainElection)
+        verify(timeout = 1000) { spiedOnElectionClicked(electionToClick) }
     }
 }

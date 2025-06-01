@@ -45,6 +45,19 @@ import java.security.MessageDigest
  * - Recommendation: The call for expert review remains paramount, especially concerning the actual
  *   implementations of `SecureSaltProvider` and `StableIdentifierProvider`, and the overall
  *   anonymity and security guarantees in the context of the application's threat model.
+ *
+ * Architectural Consideration (Future):
+ * Currently, AnonymizedIdGenerator, SecureSaltProvider, and StableIdentifierProvider are implemented
+ * as Kotlin `object` singletons. While this simplifies access for the current MVP, for enhanced
+ * testability (especially if AnonymizedIdGenerator itself had more complex internal dependencies
+ * or logic needing direct unit testing with different provider behaviors) and for architectural
+ * consistency if a DI framework (like Hilt) is broadly adopted, refactoring these could be considered:
+ *  1. Change `object AnonymizedIdGenerator` to `class AnonymizedIdGenerator(...)`.
+ *  2. Define interfaces for `SecureSaltProvider` and `StableIdentifierProvider` (if not already done for testing).
+ *  3. Change their `object` implementations to `class ...Provider(...) : ISecureSaltProvider` etc.
+ *  4. Provide these instances via DI where needed (e.g., injected into ViewModels or services
+ *     that require ID generation or access to these providers).
+ * For the current MVP, the direct object usage is functional and well-contained.
  */
 object AnonymizedIdGenerator {
 

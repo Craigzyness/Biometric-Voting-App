@@ -32,57 +32,29 @@ class RegistrationViewModelTest {
 
     private lateinit var viewModel: RegistrationViewModel
     private lateinit var mockApplication: Application
-    private lateinit var mockVotingRepository: VotingRepository // Will be created by VM, but we can mock its source (ApiService) if needed
-                                                              // For this test, we'll mock VotingRepository itself, assuming it's injectable or the VM is refactored.
-                                                              // Current VM instantiates it directly. So we must mock AnonymizedIdGenerator and ApiService interactions.
-
-    // For simplicity, we'll mock AnonymizedIdGenerator and ApiService which is used by VotingRepository
-    // rather than trying to inject a mock VotingRepository into the current VM structure.
-    // This tests the VM's interaction with these direct/indirect dependencies.
+    private lateinit var mockVotingRepository: VotingRepository
+    // AnonymizedIdGenerator is an object, can be used directly or mocked with mockkObject if specific behaviors needed for all tests.
+    // For these tests, we pass the real object since its methods are individually mocked per test case.
 
     @Before
     fun setUp() {
-        Dispatchers.setMain(testDispatcher) // Set main dispatcher for ViewModelScope
+        Dispatchers.setMain(testDispatcher)
+        mockApplication = mockk(relaxed = true)
+        mockVotingRepository = mockk() // Create a mock for VotingRepository
 
-        mockApplication = mockk(relaxed = true) // Relaxed mock for Application context
+        // Mock AnonymizedIdGenerator object if its methods are called by all tests in a standard way
+        // For per-test mocking, `every { AnonymizedIdGenerator.generate(...) }` is fine.
+        mockkObject(AnonymizedIdGenerator) // Ensure it's mockable as an object
 
-        // Mock AnonymizedIdGenerator as it's an object
-        mockkObject(AnonymizedIdGenerator)
-
-        // Mock ApiService.instance as VotingRepository uses it
-        // This is a bit complex due to singleton pattern. Alternative: pass mock repo to VM.
-        // For now, assuming we can control what VotingRepository returns by mocking its underlying ApiService calls.
-        // However, the current VM instantiates VotingRepository(ApiService.instance).
-        // A better approach for testability would be to inject VotingRepository into the ViewModel.
-        // Let's proceed by mocking the direct dependencies of the code *within* the ViewModel:
-        // AnonymizedIdGenerator.generate(...) and votingRepository.registerVoter(...)
-        // This means we need a way to inject mockVotingRepository or mock the ApiService globally.
-        // Given the VM structure `private val votingRepository = VotingRepository(ApiService.instance)`,
-        // we'll mock ApiService.instance for these tests. This is not ideal but works for the current VM.
-
-        // Re-creating the VM for each test with fresh mocks might be better if state is an issue.
-        // For now, one instance and mock behaviors per test.
-
-        // Let's refine: The task implies the VM takes Application.
-        // The VM then creates VotingRepository(ApiService.instance).
-        // So, we need to mock ApiService.instance for repository calls.
-        // And mock AnonymizedIdGenerator.generate.
-
-        // The ViewModel constructor is: RegistrationViewModel(application: Application)
-        // It then creates `votingRepository = VotingRepository(ApiService.instance)`
-        // To mock repository calls, we must mock `ApiService.instance` or refactor VM.
-        // Let's assume for *this test file*, we'll test the VM as is.
-        // We can't directly inject a mock VotingRepository without changing VM constructor.
-        // So, we mock the dependencies of the VotingRepository (ApiService) and AnonymizedIdGenerator.
-
-        viewModel = RegistrationViewModel(mockApplication)
+        // ViewModel is now instantiated with mocked dependencies
+        viewModel = RegistrationViewModel(mockApplication, AnonymizedIdGenerator, mockVotingRepository)
     }
 
     @After
     fun tearDown() {
-        Dispatchers.resetMain() // Reset main dispatcher
-        unmockkObject(AnonymizedIdGenerator)
-        // If ApiService.instance was mocked: clearMockk(ApiService.instance) or similar
+        Dispatchers.resetMain()
+        unmockkObject(AnonymizedIdGenerator) // Clear the object mock
+        // clearAllMocks() // Optionally clear all MockK mocks
     }
 
     @Test
@@ -183,13 +155,9 @@ class RegistrationViewModelTest {
         // Setup for successful path:
         every { AnonymizedIdGenerator.generate(any(), any()) } returns mockGeneratedId
         // To mock the repository call, we'd need to mock ApiService.instance.
-        // For this test, we use reflection to inject a mock repository.
-        // This is a workaround due to the ViewModel not using constructor injection for VotingRepository.
-        // Ideally, VotingRepository should be injected.
-        val mockRepository = mockk<VotingRepository>()
-        coEvery { mockRepository.registerVoter(mockGeneratedId) } returns Result.success(mockRepoResponse)
-
-        val originalRepo = replaceViewModelRepository(viewModel, mockRepository)
+        // AnonymizedIdGenerator.generate is already mocked in setUp or per test.
+        // VotingRepository is now injected and mocked.
+        coEvery { mockVotingRepository.registerVoter(mockGeneratedId) } returns Result.success(mockRepoResponse)
 
         val events = mutableListOf<RegistrationViewEvent>()
         val job = launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.eventFlow.collect { events.add(it) } }
@@ -203,7 +171,7 @@ class RegistrationViewModelTest {
         assertTrue("Should emit NavigateToElectionList event with correct ID", events.any { it is RegistrationViewEvent.NavigateToElectionList && it.generatedId == mockGeneratedId })
 
         job.cancel()
-        replaceViewModelRepository(viewModel, originalRepo) // Restore original
+        // No need to restore repo, VM instance is per test or reset if needed
     }
 
     @Test
@@ -213,19 +181,13 @@ class RegistrationViewModelTest {
         val repoError = Exception("Backend network error")
 
         every { AnonymizedIdGenerator.generate(mockApplication, mockAuthResult) } returns mockGeneratedId
-
-        val mockRepository = mockk<VotingRepository>()
-        coEvery { mockRepository.registerVoter(mockGeneratedId) } returns Result.failure(repoError)
-
-        val originalRepo = replaceViewModelRepository(viewModel, mockRepository)
+        coEvery { mockVotingRepository.registerVoter(mockGeneratedId) } returns Result.failure(repoError)
 
         viewModel.onBiometricAuthenticationSuccess(mockAuthResult)
 
         val finalState = viewModel.uiState.value
         assertTrue("UI state should be Error, was $finalState", finalState is RegistrationUiState.Error)
         assertEquals("Error: Backend Registration Failed - ${repoError.message}", (finalState as RegistrationUiState.Error).message)
-
-        replaceViewModelRepository(viewModel, originalRepo)
     }
 
     @Test
@@ -241,12 +203,12 @@ class RegistrationViewModelTest {
         assertEquals("Error: Failed to generate secure ID locally.", (finalState as RegistrationUiState.Error).message)
     }
 
-    // Helper function to replace the repository in the ViewModel using reflection (for test purposes only)
-    private fun replaceViewModelRepository(viewModel: RegistrationViewModel, newRepository: VotingRepository): VotingRepository {
-        val field = viewModel.javaClass.getDeclaredField("votingRepository")
-        field.isAccessible = true
-        val originalRepository = field.get(viewModel) as VotingRepository
-        field.set(viewModel, newRepository)
-        return originalRepository
-    }
+    // Reflection helper is no longer needed as repository is injected.
+    // private fun replaceViewModelRepository(viewModel: RegistrationViewModel, newRepository: VotingRepository): VotingRepository {
+    //     val field = viewModel.javaClass.getDeclaredField("votingRepository")
+    //     field.isAccessible = true
+    //     val originalRepository = field.get(viewModel) as VotingRepository
+    //     field.set(viewModel, newRepository)
+    //     return originalRepository
+    // }
 }

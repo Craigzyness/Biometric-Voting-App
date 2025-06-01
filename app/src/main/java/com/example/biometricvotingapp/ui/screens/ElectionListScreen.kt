@@ -45,11 +45,14 @@ import com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewMo
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ElectionListScreen(
+    viewModel: ElectionListViewModel, // ViewModel instance is now passed directly
     onElectionClicked: (Election) -> Unit, // Callback when an election is clicked
     // TODO: Add callbacks for other actions like logout, refresh, etc.
     // onLogoutClicked: () -> Unit
-    viewModel: ElectionListViewModel = viewModel() // Obtain ViewModel instance
 ) {
+    // val application = LocalContext.current.applicationContext as Application // No longer needed here
+    // val factory = ElectionListViewModelFactory(application, votingRepository) // Factory logic moved to caller
+    // val viewModel: ElectionListViewModel = viewModel(factory = factory) // VM is passed in
     val uiState by viewModel.uiState.collectAsState()
 
     Scaffold(

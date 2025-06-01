@@ -31,21 +31,18 @@ import androidx.lifecycle.viewmodel.compose.viewModel // For viewModel() delegat
 
 @Composable
 fun RegistrationScreen(
+    viewModel: RegistrationViewModel, // ViewModel instance is now passed directly
     onNavigateToLogin: () -> Unit,
-    onRegistrationSuccess: (generatedId: String) -> Unit // This is effectively onRegistrationComplete from VM's perspective
+    onRegistrationSuccess: (generatedId: String) -> Unit
 ) {
-    val context = LocalContext.current
-    val activity = LocalContext.current as? FragmentActivity
-    val application = LocalContext.current.applicationContext as Application
+    val context = LocalContext.current // Still needed for BiometricAuthManager
+    val activity = LocalContext.current as? FragmentActivity // Still needed for BiometricAuthManager
+    // val application = LocalContext.current.applicationContext as Application // No longer needed here for factory
 
-    // Use the RegistrationViewModel
-    // For this to work without a custom factory, RegistrationViewModel must have a constructor
-    // that either takes no arguments or only an Application argument.
-    // Our VM takes Application, so this should work.
-    val viewModel: RegistrationViewModel = viewModel()
+    // val factory = RegistrationViewModelFactory(application, AnonymizedIdGenerator, votingRepository) // Factory logic moved to caller
+    // val viewModel: RegistrationViewModel = viewModel(factory = factory) // VM is passed in
 
     val uiState by viewModel.uiState.collectAsState()
-    val coroutineScope = rememberCoroutineScope() // For launching biometric prompt handling
 
     // Handle one-time events from ViewModel
     LaunchedEffect(key1 = viewModel.eventFlow) {

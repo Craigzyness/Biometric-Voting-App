@@ -56,9 +56,25 @@ fun AppNavigator() {
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Registration) }
     var currentAnonymizedId by remember { mutableStateOf<String?>(null) } // Store the anonymized ID
 
+    // Create and remember VotingRepository instance
+    val votingRepository = remember {
+        com.example.biometricvotingapp.data.repository.VotingRepository(
+            com.example.biometricvotingapp.data.network.ApiService.instance
+        )
+    }
+    // Get Application context for ViewModel factories
+    val application = LocalContext.current.applicationContext as android.app.Application
+
     when (val screen = currentScreen) { // Use 'screen' for smart casting
         is Screen.Registration -> {
+            val factory = com.example.biometricvotingapp.ui.screens.registration.RegistrationViewModelFactory(
+                application,
+                com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator,
+                votingRepository
+            )
+            val viewModel: com.example.biometricvotingapp.ui.screens.registration.RegistrationViewModel = viewModel(factory = factory)
             RegistrationScreen(
+                viewModel = viewModel,
                 onNavigateToLogin = { currentScreen = Screen.Login },
                 onRegistrationSuccess = { generatedId ->
                     Log.i("AppNavigator", "Registration successful. Generated ID (first 8): ${generatedId.take(8)}")
@@ -68,6 +84,7 @@ fun AppNavigator() {
             )
         }
         is Screen.Login -> {
+            // LoginScreen does not yet have a ViewModel, its call remains the same
             LoginScreen(
                 onNavigateToRegister = { currentScreen = Screen.Registration },
                 onLoginSuccess = { anonymizedId ->
@@ -83,9 +100,10 @@ fun AppNavigator() {
             )
         }
         is Screen.ElectionList -> {
-            // val votingRepository = remember { ... } // This instantiation is no longer needed here
+            val factory = com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewModelFactory(application, votingRepository)
+            val viewModel: com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewModel = viewModel(factory = factory)
             ElectionListScreen(
-                // The viewModel is now obtained by default in ElectionListScreen
+                viewModel = viewModel,
                 onElectionClicked = { selectedElection ->
                     Log.d("AppNavigator", "Election clicked: ${selectedElection.title}")
                     if (currentAnonymizedId == null) {
@@ -99,15 +117,15 @@ fun AppNavigator() {
             )
         }
         is Screen.Voting -> {
-            // Ensure currentAnonymizedId is not null before navigating here, or handle gracefully.
-            // The check in ElectionList -> onElectionClicked is one way.
-            // Alternatively, VotingScreen itself could have a check or AppNavigator could redirect if null.
             val voterId = currentAnonymizedId ?: run {
                 Log.e("AppNavigator", "Critical error: Navigated to VotingScreen with null anonymizedVoterId. Redirecting to Login.")
                 currentScreen = Screen.Login
-                return // Exit when block early
+                return@AppNavigator // Corrected return for Composable
             }
+            val factory = com.example.biometricvotingapp.ui.screens.voting.VotingViewModelFactory(application, votingRepository)
+            val viewModel: com.example.biometricvotingapp.ui.screens.voting.VotingViewModel = viewModel(factory = factory)
             VotingScreen(
+                viewModel = viewModel,
                 anonymizedVoterId = voterId,
                 election = screen.election,
                 onVoteConfirmedAndSubmitted = { confirmedElection, selectedOption ->

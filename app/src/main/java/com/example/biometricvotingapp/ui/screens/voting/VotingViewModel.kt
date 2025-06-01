@@ -32,10 +32,9 @@ sealed interface VotingViewEvent {
 
 
 class VotingViewModel(
-    private val application: Application
+    private val application: Application,
+    private val votingRepository: VotingRepository // Injected
 ) : ViewModel() {
-
-    private val votingRepository = VotingRepository(ApiService.instance)
 
     private val _uiState = MutableStateFlow<VotingUiState>(VotingUiState.Idle)
     val uiState: StateFlow<VotingUiState> = _uiState.asStateFlow()

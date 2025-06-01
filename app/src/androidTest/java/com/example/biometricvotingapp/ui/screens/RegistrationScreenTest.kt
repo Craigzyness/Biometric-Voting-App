@@ -15,24 +15,30 @@ class RegistrationScreenTest {
     @get:Rule
     val composeTestRule = createComposeRule()
 
-    // For this initial test, dependencies like BiometricAuthManager,
-    // AnonymizedIdGenerator, and VotingRepository are not mocked.
-    // We are testing the initial UI composition and presence of elements.
-    // More complex tests would require a Test Double strategy for these dependencies.
+    private lateinit var mockViewModel: RegistrationViewModel
+    private lateinit var mockOnNavigateToLogin: () -> Unit
+    private lateinit var mockOnRegistrationSuccess: (String) -> Unit
+    private lateinit var events: MutableSharedFlow<RegistrationViewEvent>
+
+    @Before
+    fun setUp() {
+        mockViewModel = mockk(relaxed = true)
+        mockOnNavigateToLogin = mockk(relaxed = true)
+        mockOnRegistrationSuccess = mockk(relaxed = true)
+        events = MutableSharedFlow() // For emitting test events
+
+        every { mockViewModel.uiState } returns MutableStateFlow(RegistrationUiState.Idle)
+        every { mockViewModel.eventFlow } returns events.asSharedFlow()
+    }
 
     @Test
-    fun registrationScreen_displaysKeyElementsCorrectly() {
-        // Set content for the test
+    fun registrationScreen_displaysKeyElementsCorrectly_whenIdle() {
         composeTestRule.setContent {
-            // It's good practice to wrap the Composable under test with your app's theme,
-            // if it provides one. If BiometricVotingAppTheme is not yet defined or causes issues
-            // in test, MaterialTheme {} can be used as a fallback for basic theming.
-            // For now, assuming BiometricVotingAppTheme is available as per previous setup.
-            // If not, replace with MaterialTheme {}.
-             BiometricVotingAppTheme { // Or MaterialTheme {}
+            BiometricVotingAppTheme {
                 RegistrationScreen(
-                    onNavigateToLogin = {}, // Mocked lambda, does nothing in this test
-                    onRegistrationSuccess = {}  // Mocked lambda, does nothing in this test
+                    viewModel = mockViewModel,
+                    onNavigateToLogin = mockOnNavigateToLogin,
+                    onRegistrationSuccess = mockOnRegistrationSuccess
                 )
             }
         }
@@ -53,5 +59,36 @@ class RegistrationScreenTest {
 
         // Check for the "Login here" link/button text
         composeTestRule.onNodeWithText("Already registered? Login here").assertIsDisplayed()
+    }
+
+    @Test
+    fun registrationSuccess_triggersOnRegistrationSuccessCallback() = runTest {
+        val testGeneratedId = "test-id-123"
+        // Ensure the mockOnRegistrationSuccess is a spyk or can be verified
+        val spiedOnRegistrationSuccess = spyk(mockOnRegistrationSuccess)
+
+        composeTestRule.setContent {
+            BiometricVotingAppTheme {
+                RegistrationScreen(
+                    viewModel = mockViewModel,
+                    onNavigateToLogin = mockOnNavigateToLogin,
+                    onRegistrationSuccess = spiedOnRegistrationSuccess
+                )
+            }
+        }
+
+        // Simulate the ViewModel emitting the navigation event
+        // Launch in a separate coroutine to allow collection in LaunchedEffect
+        val job = launch {
+            events.emit(RegistrationViewEvent.NavigateToElectionList(testGeneratedId))
+        }
+
+        // Wait for the event to be processed by LaunchedEffect in the Composable
+        composeTestRule.waitForIdle() // Ensures LaunchedEffect coroutine runs
+
+        // Verify that the callback was invoked with the correct ID
+        verify(timeout = 1000) { spiedOnRegistrationSuccess(testGeneratedId) } // Use timeout if timing is an issue
+
+        job.cancel()
     }
 }

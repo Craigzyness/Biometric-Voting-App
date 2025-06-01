@@ -31,34 +31,26 @@ class VotingViewModelTest {
     private lateinit var mockApplication: Application
     private lateinit var mockVotingRepository: VotingRepository
     private lateinit var mockAuthResult: BiometricPrompt.AuthenticationResult
+    private lateinit var viewModel: VotingViewModel // Instantiated in setUp
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         mockApplication = mockk(relaxed = true)
-        mockVotingRepository = mockk()
-        mockAuthResult = mockk(relaxed = true) // Relaxed as its properties aren't deeply inspected here
+        mockVotingRepository = mockk(relaxed = true) // Relaxed to avoid mocking all repo methods in every test
+        mockAuthResult = mockk(relaxed = true)
 
-        // Instantiate ViewModel and then replace its repository for each test or setup specific mocks
-        viewModel = VotingViewModel(mockApplication)
-        // Replace the internally created repository with our mock using the helper
-        replaceViewModelRepository(viewModel, mockVotingRepository)
+        // Instantiate ViewModel with mocked dependencies
+        viewModel = VotingViewModel(mockApplication, mockVotingRepository)
     }
 
     @After
     fun tearDown() {
         Dispatchers.resetMain()
-        // clearAllMocks() // if needed, but MockK usually handles this well per test with fresh mocks.
+        // clearAllMocks()
     }
 
-    // Helper function to replace the repository in the ViewModel using reflection
-    private fun replaceViewModelRepository(viewModel: VotingViewModel, newRepository: VotingRepository): VotingRepository {
-        val field = viewModel.javaClass.getDeclaredField("votingRepository")
-        field.isAccessible = true
-        val originalRepository = field.get(viewModel) as VotingRepository
-        field.set(viewModel, newRepository)
-        return originalRepository // Return original if needed for restore, though not used in these tests
-    }
+    // Reflection helper is no longer needed.
 
     @Test
     fun `initial state is Idle`() {

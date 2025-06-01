@@ -32,10 +32,15 @@ fun VotingScreen(
     election: Election,
     onVoteConfirmedAndSubmitted: (election: Election, selectedOption: String) -> Unit, // For navigation
     onNavigateBack: () -> Unit,
-    viewModel: VotingViewModel = viewModel() // Obtain ViewModel instance
+    viewModel: VotingViewModel // ViewModel instance is now passed directly
+    // votingRepository parameter removed
 ) {
-    val context = LocalContext.current
-    val activity = LocalContext.current as? FragmentActivity
+    val context = LocalContext.current // Still needed for BiometricAuthManager
+    val activity = LocalContext.current as? FragmentActivity // Still needed for BiometricAuthManager
+    // val application = LocalContext.current.applicationContext as Application // No longer needed for factory here
+
+    // val factory = VotingViewModelFactory(application, votingRepository) // Factory logic moved to caller
+    // val viewModel: VotingViewModel = viewModel(factory = factory) // VM is passed in
 
     val uiState by viewModel.uiState.collectAsState()
     var selectedOptionState by remember { mutableStateOf<String?>(null) } // Local state for radio button selection
