@@ -1,8 +1,12 @@
 // backend/server.js
 const express = require('express');
 const { Pool } = require('pg');
+const helmet = require('helmet'); // Import helmet
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Apply Helmet middleware for security headers
+app.use(helmet());
 
 // Middleware to parse JSON bodies
 app.use(express.json());
@@ -242,18 +246,16 @@ apiRouter.post('/submitVote', async (req, res) => {
             );
             const newVote = voteInsertResult.rows[0];
 
-            // Log more info for simulation, including proof if present
+            // Log core vote info for simulation, excluding sensitive cryptographic proof details
             const logDataForBlockchain = {
-                voteId: newVote.id,
-                anonymizedVoterId: anonymizedVoterId,
-                electionId: newVote.election_id,
+                voteId: newVote.id, // Internal DB id for the vote
+                anonymizedVoterId: anonymizedVoterId, // Original anonymized ID from request
+                electionId: newVote.election_id, // Internal election ID
                 selectedOption: newVote.selected_option_value,
                 castAtTimestamp: newVote.cast_at_timestamp,
+                // encryptedProof and iv are intentionally NOT logged here for security, even in simulation.
+                // Their presence in the DB is the important part.
             };
-            if (encryptedProof && iv) {
-                logDataForBlockchain.encryptedProof = encryptedProof; // For simulation only
-                logDataForBlockchain.iv = iv; // For simulation only
-            }
             console.log(`SIMULATING BLOCKCHAIN RECORD (Append-Only Log Entry): ${JSON.stringify(logDataForBlockchain)}`);
 
             res.status(201).json({
@@ -290,6 +292,12 @@ app.get('/', (req, res) => {
 
 // Start server only if not in test environment
 if (process.env.NODE_ENV !== 'test') {
+    // PRODUCTION NOTE:
+    // In a production environment, this Node.js server should run behind a
+    // reverse proxy (e.g., Nginx, Apache) that handles HTTPS termination,
+    // SSL certificates, and potentially load balancing.
+    // The following app.listen is suitable for development and
+    // for when the reverse proxy forwards plain HTTP requests to this server internally.
     app.listen(PORT, async () => {
         await initializeDatabase(); // Initialize DB and tables before starting server
         console.log(`Backend server listening on port ${PORT}`);

@@ -3,6 +3,7 @@ package com.example.biometricvotingapp.domain.security
 import android.content.Context
 import android.util.Log
 import androidx.biometric.BiometricPrompt // Keep for the authResult parameter type
+import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 
@@ -76,17 +77,17 @@ object AnonymizedIdGenerator {
      * @return A hex-encoded SHA-256 hash as the anonymized ID, or null if generation fails.
      */
     fun generate(context: Context, authResult: BiometricPrompt.AuthenticationResult?): String? {
-        Log.d(TAG, "Attempting to generate secure anonymized ID...")
+        if (BuildConfig.DEBUG) Log.d(TAG, "Attempting to generate secure anonymized ID...")
 
         val salt = SecureSaltProvider.getSalt(context)
         if (salt == null) {
-            Log.e(TAG, "Failed to get or generate salt. Cannot generate anonymized ID.")
+            if (BuildConfig.DEBUG) Log.e(TAG, "Failed to get or generate salt. Cannot generate anonymized ID.")
             return null
         }
 
         val stableInstallId = StableIdentifierProvider.getStableIdentifier(context)
         if (stableInstallId == null) {
-            Log.e(TAG, "Failed to get or generate stable app installation ID. Cannot generate anonymized ID.")
+            if (BuildConfig.DEBUG) Log.e(TAG, "Failed to get or generate stable app installation ID. Cannot generate anonymized ID.")
             return null
         }
 
@@ -105,8 +106,8 @@ object AnonymizedIdGenerator {
             // Convert byte array to hex string
             val hexString = bytesToHexString(hashedBytes)
 
-            Log.i(TAG, "Successfully generated SHA-256 based Anonymized ID (first 8 chars): ${hexString.take(8)}...")
-            // Log.d(TAG, "Full Anonymized ID: $hexString") // Avoid logging full ID in production
+            if (BuildConfig.DEBUG) Log.i(TAG, "Successfully generated SHA-256 based Anonymized ID (first 8 chars): ${hexString.take(8)}...")
+            // if (BuildConfig.DEBUG) Log.d(TAG, "Full Anonymized ID: $hexString") // Avoid logging full ID in production
 
             // !! IMPORTANT !!
             // This generated ID should now be securely stored or used as needed.
@@ -118,7 +119,7 @@ object AnonymizedIdGenerator {
             return hexString
 
         } catch (e: Exception) { // Catch any generic exception during crypto operations
-            Log.e(TAG, "Error during SHA-256 ID generation: ${e.message}", e)
+            if (BuildConfig.DEBUG) Log.e(TAG, "Error during SHA-256 ID generation: ${e.message}", e)
             return null
         }
     }
@@ -146,17 +147,17 @@ object AnonymizedIdGenerator {
      *         otherwise null.
      */
     fun getRegisteredAnonymizedId(context: Context): String? {
-        Log.d(TAG, "Attempting to get/re-derive registered anonymized ID...")
+        if (BuildConfig.DEBUG) Log.d(TAG, "Attempting to get/re-derive registered anonymized ID...")
 
         val salt = SecureSaltProvider.getSalt(context)
         if (salt == null) {
-            Log.i(TAG, "Salt not found. User likely not (fully) registered.")
+            if (BuildConfig.DEBUG) Log.i(TAG, "Salt not found. User likely not (fully) registered.")
             return null
         }
 
         val stableInstallId = StableIdentifierProvider.getStableIdentifier(context)
         if (stableInstallId == null) {
-            Log.i(TAG, "Stable app installation ID not found. User likely not (fully) registered.")
+            if (BuildConfig.DEBUG) Log.i(TAG, "Stable app installation ID not found. User likely not (fully) registered.")
             return null
         }
 
@@ -172,11 +173,11 @@ object AnonymizedIdGenerator {
             val hashedBytes = messageDigest.digest(dataToHash)
 
             val hexString = bytesToHexString(hashedBytes) // Relies on bytesToHexString being defined correctly above this
-            Log.d(TAG, "Successfully re-derived anonymized ID for registered user.")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Successfully re-derived anonymized ID for registered user.")
             return hexString
 
         } catch (e: Exception) {
-            Log.e(TAG, "Error during SHA-256 ID re-derivation: ${e.message}", e)
+            if (BuildConfig.DEBUG) Log.e(TAG, "Error during SHA-256 ID re-derivation: ${e.message}", e)
             return null
         }
     }

@@ -1,10 +1,11 @@
 package com.example.biometricvotingapp.ui.screens.registration
 
 import android.app.Application
-import android.content.Context
+import android.app.Application // Already present, ensure it's used if needed for context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
 import com.example.biometricvotingapp.data.network.ApiService
 import com.example.biometricvotingapp.data.repository.VotingRepository
 import com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator
@@ -30,7 +31,7 @@ class RegistrationViewModel(
     val eventFlow: SharedFlow<RegistrationViewEvent> = _eventFlow.asSharedFlow()
 
     fun onRegisterClicked() {
-        Log.d("RegistrationViewModel", "Register button clicked")
+        if (BuildConfig.DEBUG) Log.d("RegistrationViewModel", "Register button clicked")
         _uiState.value = RegistrationUiState.AwaitingBiometrics
         viewModelScope.launch {
             _eventFlow.emit(RegistrationViewEvent.ShowBiometricPrompt)
@@ -38,19 +39,19 @@ class RegistrationViewModel(
     }
 
     fun onBiometricAuthenticationSuccess(authResult: androidx.biometric.BiometricPrompt.AuthenticationResult) {
-        Log.d("RegistrationViewModel", "Biometric authentication successful")
+        if (BuildConfig.DEBUG) Log.d("RegistrationViewModel", "Biometric authentication successful")
         _uiState.value = RegistrationUiState.Loading("Generating ID and registering with server...")
 
         viewModelScope.launch {
             // Use injected anonymizedIdGenerator
             val generatedId = anonymizedIdGenerator.generate(application, authResult) // Pass application context
             if (generatedId != null) {
-                Log.i("RegistrationViewModel", "Local ID generated: ${generatedId.take(8)}")
+                if (BuildConfig.DEBUG) Log.i("RegistrationViewModel", "Local ID generated: ${generatedId.take(8)}")
                 // Use injected votingRepository
                 val registrationResult = votingRepository.registerVoter(generatedId)
                 registrationResult.fold(
                     onSuccess = { backendResponse ->
-                        Log.i("RegistrationViewModel", "Backend registration successful: ${backendResponse.message}")
+                        if (BuildConfig.DEBUG) Log.i("RegistrationViewModel", "Backend registration successful: ${backendResponse.message}")
                         _uiState.value = RegistrationUiState.Success(backendResponse.message ?: "Registered successfully!")
                         viewModelScope.launch { // Launch a new coroutine for emitting event
                             _eventFlow.emit(RegistrationViewEvent.NavigateToElectionList(generatedId))
@@ -58,13 +59,13 @@ class RegistrationViewModel(
                     },
                     onFailure = { error ->
                         val errorMessage = "Error: Backend Registration Failed - ${error.message}"
-                        Log.e("RegistrationViewModel", "Backend registration error: ${error.message}")
+                        if (BuildConfig.DEBUG) Log.e("RegistrationViewModel", "Backend registration error: ${error.message}")
                         _uiState.value = RegistrationUiState.Error(errorMessage)
                     }
                 )
             } else {
                 val errorMessage = "Error: Failed to generate secure ID locally."
-                Log.e("RegistrationViewModel", errorMessage)
+                if (BuildConfig.DEBUG) Log.e("RegistrationViewModel", errorMessage)
                 _uiState.value = RegistrationUiState.Error(errorMessage)
             }
         }
@@ -72,13 +73,13 @@ class RegistrationViewModel(
 
     fun onBiometricAuthenticationError(errorCode: Int, errString: CharSequence) {
         val errorMessage = "Error: Biometric Authentication Error $errorCode: $errString"
-        Log.e("RegistrationViewModel", errorMessage)
+        if (BuildConfig.DEBUG) Log.e("RegistrationViewModel", errorMessage)
         _uiState.value = RegistrationUiState.Error(errorMessage)
     }
 
     fun onBiometricAuthenticationFailed() {
         val errorMessage = "Error: Biometric Authentication Failed. Fingerprint not recognized."
-        Log.w("RegistrationViewModel", errorMessage)
+        if (BuildConfig.DEBUG) Log.w("RegistrationViewModel", errorMessage)
         _uiState.value = RegistrationUiState.Error(errorMessage)
     }
 

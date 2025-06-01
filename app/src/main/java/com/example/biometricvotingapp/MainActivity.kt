@@ -9,6 +9,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext // Needed for Application context
+import androidx.lifecycle.viewmodel.compose.viewModel // Needed for viewModel() delegate
+import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
 import com.example.biometricvotingapp.domain.model.Election // Import Election model
 import com.example.biometricvotingapp.ui.screens.ElectionListScreen
 import com.example.biometricvotingapp.ui.screens.LoginScreen
@@ -77,7 +80,7 @@ fun AppNavigator() {
                 viewModel = viewModel,
                 onNavigateToLogin = { currentScreen = Screen.Login },
                 onRegistrationSuccess = { generatedId ->
-                    Log.i("AppNavigator", "Registration successful. Generated ID (first 8): ${generatedId.take(8)}")
+                    if (BuildConfig.DEBUG) Log.i("AppNavigator", "Registration successful. Generated ID (first 8): ${generatedId.take(8)}")
                     currentAnonymizedId = generatedId // Store the ID
                     currentScreen = Screen.ElectionList
                 }
@@ -89,11 +92,11 @@ fun AppNavigator() {
                 onNavigateToRegister = { currentScreen = Screen.Registration },
                 onLoginSuccess = { anonymizedId ->
                     if (anonymizedId != null) {
-                        Log.i("AppNavigator", "Login successful. Anonymized ID (first 8): ${anonymizedId.take(8)}")
+                        if (BuildConfig.DEBUG) Log.i("AppNavigator", "Login successful. Anonymized ID (first 8): ${anonymizedId.take(8)}")
                         currentAnonymizedId = anonymizedId // Store the ID
                         currentScreen = Screen.ElectionList
                     } else {
-                        Log.w("AppNavigator", "Login failed or app registration not found.")
+                        if (BuildConfig.DEBUG) Log.w("AppNavigator", "Login failed or app registration not found.")
                         // LoginScreen handles displaying its own error message.
                     }
                 }
@@ -105,9 +108,9 @@ fun AppNavigator() {
             ElectionListScreen(
                 viewModel = viewModel,
                 onElectionClicked = { selectedElection ->
-                    Log.d("AppNavigator", "Election clicked: ${selectedElection.title}")
+                    if (BuildConfig.DEBUG) Log.d("AppNavigator", "Election clicked: ${selectedElection.title}")
                     if (currentAnonymizedId == null) {
-                        Log.e("AppNavigator", "Error: User anonymized ID is null. Cannot navigate to Voting screen. Returning to Login.")
+                        if (BuildConfig.DEBUG) Log.e("AppNavigator", "Error: User anonymized ID is null. Cannot navigate to Voting screen. Returning to Login.")
                         currentScreen = Screen.Login // Or handle error appropriately
                     } else {
                         currentScreen = Screen.Voting(selectedElection)
@@ -118,7 +121,7 @@ fun AppNavigator() {
         }
         is Screen.Voting -> {
             val voterId = currentAnonymizedId ?: run {
-                Log.e("AppNavigator", "Critical error: Navigated to VotingScreen with null anonymizedVoterId. Redirecting to Login.")
+                if (BuildConfig.DEBUG) Log.e("AppNavigator", "Critical error: Navigated to VotingScreen with null anonymizedVoterId. Redirecting to Login.")
                 currentScreen = Screen.Login
                 return@AppNavigator // Corrected return for Composable
             }
@@ -129,11 +132,11 @@ fun AppNavigator() {
                 anonymizedVoterId = voterId,
                 election = screen.election,
                 onVoteConfirmedAndSubmitted = { confirmedElection, selectedOption ->
-                    Log.i("AppNavigator", "Vote confirmed and submitted for ${confirmedElection.title}, option: $selectedOption")
+                    if (BuildConfig.DEBUG) Log.i("AppNavigator", "Vote confirmed and submitted for ${confirmedElection.title}, option: $selectedOption")
                     currentScreen = Screen.ElectionList // Navigate back to election list
                 },
                 onNavigateBack = {
-                    Log.d("AppNavigator", "Navigating back from VotingScreen to ElectionList.")
+                    if (BuildConfig.DEBUG) Log.d("AppNavigator", "Navigating back from VotingScreen to ElectionList.")
                     currentScreen = Screen.ElectionList
                 }
             )

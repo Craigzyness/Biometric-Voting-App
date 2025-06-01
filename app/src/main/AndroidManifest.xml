@@ -13,6 +13,10 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.BiometricVotingApp"
+        <!-- IMPORTANT FOR RELEASE: android:usesCleartextTraffic MUST be set to "false"
+             for release builds to enforce HTTPS, unless a Network Security Configuration
+             is used to permit cleartext for specific domains (e.g., localhost during development).
+             For production, all backend communication should be HTTPS. -->
         android:usesCleartextTraffic="true"
         tools:targetApi="31">
         <activity

@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
 import com.example.biometricvotingapp.data.network.ApiService
 import com.example.biometricvotingapp.data.network.dto.ElectionDto
 import com.example.biometricvotingapp.data.repository.VotingRepository
@@ -36,11 +37,11 @@ class ElectionListViewModel(
     fun loadElections() {
         viewModelScope.launch {
             _uiState.value = ElectionListUiState.Loading
-            Log.d("ElectionListViewModel", "Fetching elections...")
+            if (BuildConfig.DEBUG) Log.d("ElectionListViewModel", "Fetching elections...")
             val result = votingRepository.getElections()
             result.fold(
                 onSuccess = { electionDtoList ->
-                    Log.d("ElectionListViewModel", "Fetched ${electionDtoList.size} elections DTOs.")
+                    if (BuildConfig.DEBUG) Log.d("ElectionListViewModel", "Fetched ${electionDtoList.size} elections DTOs.")
                     if (electionDtoList.isEmpty()) {
                         _uiState.value = ElectionListUiState.Empty
                     } else {
@@ -50,7 +51,7 @@ class ElectionListViewModel(
                 },
                 onFailure = { error ->
                     val errorMessage = error.message ?: "An unknown error occurred while fetching elections."
-                    Log.e("ElectionListViewModel", "Error fetching elections: $errorMessage")
+                    if (BuildConfig.DEBUG) Log.e("ElectionListViewModel", "Error fetching elections: $errorMessage")
                     _uiState.value = ElectionListUiState.Error(errorMessage)
                 }
             )

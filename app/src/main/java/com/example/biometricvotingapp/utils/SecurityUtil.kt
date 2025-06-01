@@ -23,10 +23,36 @@ object SecurityUtil {
 
     private val keyStore: KeyStore by lazy {
         KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+package com.example.biometricvotingapp.utils
+
+import android.os.Build
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
+import android.security.keystore.KeyProperties
+import android.util.Log
+import androidx.biometric.BiometricPrompt
+import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
+import javax.crypto.spec.IvParameterSpec
+import java.nio.charset.StandardCharsets // For String to ByteArray and vice-versa
+
+object SecurityUtil {
+
+    private const val TAG = "SecurityUtil"
+
+    private const val KEY_ALIAS = "biometric_voting_key_v1" // Added _v1 for potential versioning
+    private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+    private const val TRANSFORMATION = "${KeyProperties.KEY_ALGORITHM_AES}/${KeyProperties.BLOCK_MODE_CBC}/${KeyProperties.ENCRYPTION_PADDING_PKCS7}"
+
+    private val keyStore: KeyStore by lazy {
+        KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
     }
 
     private fun generateSecretKey(): SecretKey {
-        Log.d(TAG, "Generating new secret key with alias: $KEY_ALIAS")
+        if (BuildConfig.DEBUG) Log.d(TAG, "Generating new secret key with alias: $KEY_ALIAS")
         val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
         val keyGenParameterSpecBuilder = KeyGenParameterSpec.Builder(
             KEY_ALIAS,
@@ -48,7 +74,7 @@ object SecurityUtil {
 
         keyGenerator.init(keyGenParameterSpecBuilder.build())
         return keyGenerator.generateKey().also {
-            Log.i(TAG, "New secret key generated and stored in Keystore successfully.")
+            if (BuildConfig.DEBUG) Log.i(TAG, "New secret key generated and stored in Keystore successfully.")
         }
     }
 
@@ -56,24 +82,24 @@ object SecurityUtil {
         return try {
             keyStore.getKey(KEY_ALIAS, null)?.let { key ->
                 if (key is SecretKey) {
-                    Log.d(TAG, "Existing secret key found with alias: $KEY_ALIAS")
+                    if (BuildConfig.DEBUG) Log.d(TAG, "Existing secret key found with alias: $KEY_ALIAS")
                     key
                 } else {
-                    Log.w(TAG, "Key found with alias $KEY_ALIAS, but it's not a SecretKey. Generating new one.")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "Key found with alias $KEY_ALIAS, but it's not a SecretKey. Generating new one.")
                     keyStore.deleteEntry(KEY_ALIAS) // Remove incorrect key type
                     generateSecretKey()
                 }
             } ?: generateSecretKey()
         } catch (e: KeyPermanentlyInvalidatedException) {
-            Log.w(TAG, "Secret key was permanently invalidated (e.g., biometrics changed). Deleting and generating a new one.", e)
+            if (BuildConfig.DEBUG) Log.w(TAG, "Secret key was permanently invalidated (e.g., biometrics changed). Deleting and generating a new one.", e)
             try {
                 keyStore.deleteEntry(KEY_ALIAS)
             } catch (deleteEx: Exception) {
-                Log.e(TAG, "Failed to delete invalidated key: $KEY_ALIAS", deleteEx)
+                if (BuildConfig.DEBUG) Log.e(TAG, "Failed to delete invalidated key: $KEY_ALIAS", deleteEx)
             }
             generateSecretKey() // Generate a new key after invalidation
         } catch (e: Exception) {
-            Log.e(TAG, "Error getting or creating secret key: ${e.message}", e)
+            if (BuildConfig.DEBUG) Log.e(TAG, "Error getting or creating secret key: ${e.message}", e)
             null
         }
     }
@@ -88,25 +114,24 @@ object SecurityUtil {
             val cipher = getCipher()
             val secretKey = getOrCreateSecretKey()
             if (secretKey == null) {
-                Log.e(TAG, "Failed to get or create secret key for encryption.")
+                if (BuildConfig.DEBUG) Log.e(TAG, "Failed to get or create secret key for encryption.")
                 return null
             }
             cipher.init(Cipher.ENCRYPT_MODE, secretKey)
-            Log.d(TAG, "CryptoObject for encryption created successfully.")
+            if (BuildConfig.DEBUG) Log.d(TAG, "CryptoObject for encryption created successfully.")
             BiometricPrompt.CryptoObject(cipher)
         } catch (e: KeyPermanentlyInvalidatedException) {
-            Log.w(TAG, "Failed to initialize cipher for encryption due to key invalidation. A new key might be needed.", e)
-            // Attempt to delete the invalidated key so a new one can be generated on next attempt
+            if (BuildConfig.DEBUG) Log.w(TAG, "Failed to initialize cipher for encryption due to key invalidation. A new key might be needed.", e)
             try {
                 keyStore.deleteEntry(KEY_ALIAS)
-                Log.i(TAG, "Invalidated key $KEY_ALIAS deleted. User may need to retry operation.")
+                if (BuildConfig.DEBUG) Log.i(TAG, "Invalidated key $KEY_ALIAS deleted. User may need to retry operation.")
             } catch (deleteEx: Exception) {
-                Log.e(TAG, "Failed to delete invalidated key $KEY_ALIAS after cipher init failure.", deleteEx)
+                if (BuildConfig.DEBUG) Log.e(TAG, "Failed to delete invalidated key $KEY_ALIAS after cipher init failure.", deleteEx)
             }
             null
         }
         catch (e: Exception) {
-            Log.e(TAG, "Error creating crypto object for encryption: ${e.message}", e)
+            if (BuildConfig.DEBUG) Log.e(TAG, "Error creating crypto object for encryption: ${e.message}", e)
             null
         }
     }
@@ -116,19 +141,18 @@ object SecurityUtil {
             val cipher = getCipher()
             val secretKey = getOrCreateSecretKey() // Key should already exist and be valid
             if (secretKey == null) {
-                Log.e(TAG, "Failed to get secret key for decryption.")
+                if (BuildConfig.DEBUG) Log.e(TAG, "Failed to get secret key for decryption.")
                 return null
             }
             cipher.init(Cipher.DECRYPT_MODE, secretKey, IvParameterSpec(iv))
-            Log.d(TAG, "CryptoObject for decryption created successfully.")
+            if (BuildConfig.DEBUG) Log.d(TAG, "CryptoObject for decryption created successfully.")
             BiometricPrompt.CryptoObject(cipher)
         } catch (e: KeyPermanentlyInvalidatedException) {
-            Log.w(TAG, "Failed to initialize cipher for decryption due to key invalidation. Data might be permanently undecryptable with this key.", e)
-            // Consider implications: if key is invalidated, old data encrypted with it cannot be decrypted.
+            if (BuildConfig.DEBUG) Log.w(TAG, "Failed to initialize cipher for decryption due to key invalidation. Data might be permanently undecryptable with this key.", e)
             null
         }
         catch (e: Exception) {
-            Log.e(TAG, "Error creating crypto object for decryption: ${e.message}", e)
+            if (BuildConfig.DEBUG) Log.e(TAG, "Error creating crypto object for decryption: ${e.message}", e)
             null
         }
     }
@@ -136,19 +160,19 @@ object SecurityUtil {
     fun encryptData(data: String, cryptoObject: BiometricPrompt.CryptoObject): Pair<ByteArray, ByteArray>? {
         return try {
             val cipher = cryptoObject.cipher ?: run {
-                Log.e(TAG, "Cipher is null in provided CryptoObject for encryption.")
+                if (BuildConfig.DEBUG) Log.e(TAG, "Cipher is null in provided CryptoObject for encryption.")
                 return null
             }
             val encryptedData = cipher.doFinal(data.toByteArray(StandardCharsets.UTF_8))
             val iv = cipher.iv // IV is generated by the cipher during init for ENCRYPT_MODE (CBC)
             if (iv == null) {
-                Log.e(TAG, "IV is null after encryption. This should not happen with CBC mode.")
+                if (BuildConfig.DEBUG) Log.e(TAG, "IV is null after encryption. This should not happen with CBC mode.")
                 return null
             }
-            Log.d(TAG, "Data encrypted successfully. IV size: ${iv.size}, Encrypted data size: ${encryptedData.size}")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Data encrypted successfully. IV size: ${iv.size}, Encrypted data size: ${encryptedData.size}")
             Pair(iv, encryptedData)
         } catch (e: Exception) {
-            Log.e(TAG, "Error encrypting data: ${e.message}", e)
+            if (BuildConfig.DEBUG) Log.e(TAG, "Error encrypting data: ${e.message}", e)
             null
         }
     }
@@ -156,15 +180,14 @@ object SecurityUtil {
     fun decryptData(iv: ByteArray, encryptedData: ByteArray, cryptoObject: BiometricPrompt.CryptoObject): String? {
         return try {
             val cipher = cryptoObject.cipher ?: run {
-                Log.e(TAG, "Cipher is null in provided CryptoObject for decryption.")
+                if (BuildConfig.DEBUG) Log.e(TAG, "Cipher is null in provided CryptoObject for decryption.")
                 return null
             }
-            // The cipher within cryptoObject for decryption should have been initialized with this IV already.
             val decryptedData = cipher.doFinal(encryptedData)
-            Log.d(TAG, "Data decrypted successfully.")
+            if (BuildConfig.DEBUG) Log.d(TAG, "Data decrypted successfully.")
             String(decryptedData, StandardCharsets.UTF_8)
         } catch (e: Exception) {
-            Log.e(TAG, "Error decrypting data: ${e.message}", e)
+            if (BuildConfig.DEBUG) Log.e(TAG, "Error decrypting data: ${e.message}", e)
             null
         }
     }
@@ -175,17 +198,17 @@ object SecurityUtil {
      * Returns true if deletion was successful or key didn't exist, false otherwise.
      */
     fun deleteSecretKey(): Boolean {
-        Log.w(TAG, "Attempting to delete secret key: $KEY_ALIAS")
+        if (BuildConfig.DEBUG) Log.w(TAG, "Attempting to delete secret key: $KEY_ALIAS")
         return try {
             if (keyStore.containsAlias(KEY_ALIAS)) {
                 keyStore.deleteEntry(KEY_ALIAS)
-                Log.i(TAG, "Secret key $KEY_ALIAS deleted successfully.")
+                if (BuildConfig.DEBUG) Log.i(TAG, "Secret key $KEY_ALIAS deleted successfully.")
             } else {
-                Log.i(TAG, "Secret key $KEY_ALIAS did not exist, no action taken.")
+                if (BuildConfig.DEBUG) Log.i(TAG, "Secret key $KEY_ALIAS did not exist, no action taken.")
             }
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Error deleting secret key $KEY_ALIAS: ${e.message}", e)
+            if (BuildConfig.DEBUG) Log.e(TAG, "Error deleting secret key $KEY_ALIAS: ${e.message}", e)
             false
         }
     }
