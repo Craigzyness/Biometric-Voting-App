@@ -49,13 +49,11 @@ import com.example.biometricvotingapp.domain.model.Election // Import the Electi
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ElectionListScreen(
+    votingRepository: VotingRepository, // Injected repository
     onElectionClicked: (Election) -> Unit, // Callback when an election is clicked
     // TODO: Add callbacks for other actions like logout, refresh, etc.
     // onLogoutClicked: () -> Unit
 ) {
-    // Instantiate repository - In a real app, use ViewModel and DI
-    val votingRepository = remember { VotingRepository(ApiService.instance) }
-
     var electionsState by remember { mutableStateOf<List<ElectionDto>?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
