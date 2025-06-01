@@ -39,8 +39,7 @@ import com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewMo
  * For MVP, this list is hardcoded.
  */
 
-// For MVP, this list is fetched from the backend via VotingRepository.
-// TODO: In a full app, this would ideally involve a ViewModel.
+// For MVP, this list is fetched from the backend via VotingRepository, managed by ElectionListViewModel.
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

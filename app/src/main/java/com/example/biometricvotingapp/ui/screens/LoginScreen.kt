@@ -95,7 +95,7 @@ fun LoginScreen(
                                         if (BuildConfig.DEBUG) Log.w("LoginScreen", "Biometric auth success, but no registered anonymized ID components found.")
                                         onLoginSuccess(null) // or some error status if the callback expects it
                                     }
-                                    // TODO: Navigate to main app screen on successful login and ID retrieval.
+                                    // Navigation to main app screen is handled by AppNavigator via onLoginSuccess callback.
                                 },
                                 onError = { errString ->
                                     isLoading = false

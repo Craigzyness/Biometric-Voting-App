@@ -1,3 +1,7 @@
+**Note:** This document served as an initial comprehensive guide for setting up the Android application and implementing core features. While many foundational aspects remain relevant (especially regarding Gradle setup, BiometricPrompt API usage, and security principles), specific implementation details or architectural choices (e.g., ViewModel patterns, exact ID generation strategy, use of `SecurityUtil` for vote proofing vs. ID encryption) may have evolved. The current codebase in the `app/` directory should always be considered the definitive source of truth for the latest implementation.
+
+---
+
 # Biometric Voting App - Complete Android Implementation Guide
 
 This guide provides a comprehensive walkthrough for implementing a Biometric Voting App on Android, leveraging modern Android development practices and Jetpack libraries.

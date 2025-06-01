@@ -26,7 +26,8 @@ sealed interface VotingUiState {
 }
 
 import android.util.Base64 // For Base64 encoding
-import androidx.biometric.BiometricPrompt // For CryptoObject type
+import androidx.biometric.BiometricPrompt // For CryptoObject type, and error codes
+import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
 import com.example.biometricvotingapp.utils.SecurityUtil // For Crypto operations
 
 // Define one-time events
@@ -134,13 +135,25 @@ class VotingViewModel(
     }
 
     fun onBiometricAuthenticationError(errorCode: Int, errString: CharSequence) {
-        val errorMessage = "Error: Biometric Authentication Error $errorCode: $errString"
-        if (BuildConfig.DEBUG) Log.e("VotingViewModel", errorMessage)
-        _uiState.value = VotingUiState.Error(errorMessage)
+        val specificMessage = when (errorCode) {
+            BiometricPrompt.ERROR_HW_UNAVAILABLE, BiometricPrompt.ERROR_HW_NOT_PRESENT ->
+                "Biometric hardware not available or not detected. Please check your device."
+            BiometricPrompt.ERROR_NO_BIOMETRICS ->
+                "No biometrics enrolled. Please add a fingerprint in your device settings to confirm your vote."
+            BiometricPrompt.ERROR_LOCKOUT ->
+                "Too many attempts. Biometric authentication is temporarily locked for voting."
+            BiometricPrompt.ERROR_LOCKOUT_PERMANENT ->
+                "Too many attempts. Biometric authentication is permanently locked for voting. You may need to reconfigure device security."
+            BiometricPrompt.ERROR_USER_CANCELED, BiometricPrompt.ERROR_NEGATIVE_BUTTON ->
+                "Vote confirmation cancelled."
+            else -> "Vote confirmation error: $errString (Code: $errorCode)"
+        }
+        if (BuildConfig.DEBUG) Log.e("VotingViewModel", "Biometric Auth Error $errorCode: $errString. Mapped to: $specificMessage")
+        _uiState.value = VotingUiState.Error(specificMessage)
     }
 
     fun onBiometricAuthenticationFailed() {
-        val errorMessage = "Error: Biometric Authentication Failed. Fingerprint not recognized."
+        val errorMessage = "Vote confirmation failed. Fingerprint not recognized." // Made slightly more user-friendly
         if (BuildConfig.DEBUG) Log.w("VotingViewModel", errorMessage)
         _uiState.value = VotingUiState.Error(errorMessage)
     }
