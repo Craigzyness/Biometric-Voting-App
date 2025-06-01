@@ -14,9 +14,9 @@ import com.example.biometricvotingapp.ui.screens.ElectionListScreen
 import com.example.biometricvotingapp.ui.screens.LoginScreen
 import com.example.biometricvotingapp.ui.screens.RegistrationScreen
 import com.example.biometricvotingapp.ui.screens.VotingScreen // Import VotingScreen
-import com.example.biometricvotingapp.ui.screens.getSampleElections
 // TODO: Replace with your actual theme if you have one defined, e.g., in ui.theme package
 // import com.example.biometricvotingapp.ui.theme.BiometricVotingAppTheme
+// Removed getSampleElections import as it's no longer used here.
 
 /**
  * MainActivity.kt
@@ -54,20 +54,15 @@ class MainActivity : ComponentActivity() {
 fun AppNavigator() {
     // State to keep track of the current screen
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Registration) }
-
-    // Could also store the anonymized ID here if needed across app sessions (with proper persistence)
-    // var currentAnonymizedId by remember { mutableStateOf<String?>(null) }
+    var currentAnonymizedId by remember { mutableStateOf<String?>(null) } // Store the anonymized ID
 
     when (val screen = currentScreen) { // Use 'screen' for smart casting
         is Screen.Registration -> {
             RegistrationScreen(
                 onNavigateToLogin = { currentScreen = Screen.Login },
                 onRegistrationSuccess = { generatedId ->
-                    // Handle successful registration
                     Log.i("AppNavigator", "Registration successful. Generated ID (first 8): ${generatedId.take(8)}")
-                    // For MVP, we can directly navigate to ElectionList or Login.
-                    // Let's navigate to ElectionList after registration for now.
-                    // currentAnonymizedId = generatedId // Store if needed
+                    currentAnonymizedId = generatedId // Store the ID
                     currentScreen = Screen.ElectionList
                 }
             )
@@ -78,34 +73,45 @@ fun AppNavigator() {
                 onLoginSuccess = { anonymizedId ->
                     if (anonymizedId != null) {
                         Log.i("AppNavigator", "Login successful. Anonymized ID (first 8): ${anonymizedId.take(8)}")
-                        // currentAnonymizedId = anonymizedId // Store if needed
+                        currentAnonymizedId = anonymizedId // Store the ID
                         currentScreen = Screen.ElectionList
                     } else {
-                        // Stay on Login screen, error message is handled within LoginScreen
                         Log.w("AppNavigator", "Login failed or app registration not found.")
+                        // LoginScreen handles displaying its own error message.
                     }
                 }
             )
         }
         is Screen.ElectionList -> {
             ElectionListScreen(
-                elections = getSampleElections(), // Pass the sample data
+                // elections = getSampleElections(), // Removed, fetched from network now
                 onElectionClicked = { selectedElection ->
                     Log.d("AppNavigator", "Election clicked: ${selectedElection.title}")
-                    currentScreen = Screen.Voting(selectedElection) // Navigate to VotingScreen
+                    if (currentAnonymizedId == null) {
+                        Log.e("AppNavigator", "Error: User anonymized ID is null. Cannot navigate to Voting screen. Returning to Login.")
+                        currentScreen = Screen.Login // Or handle error appropriately
+                    } else {
+                        currentScreen = Screen.Voting(selectedElection)
+                    }
                 }
                 // TODO: Add onLogoutClicked = { currentScreen = Screen.Login; currentAnonymizedId = null }
             )
         }
-        is Screen.Voting -> { // New case for VotingScreen
+        is Screen.Voting -> {
+            // Ensure currentAnonymizedId is not null before navigating here, or handle gracefully.
+            // The check in ElectionList -> onElectionClicked is one way.
+            // Alternatively, VotingScreen itself could have a check or AppNavigator could redirect if null.
+            val voterId = currentAnonymizedId ?: run {
+                Log.e("AppNavigator", "Critical error: Navigated to VotingScreen with null anonymizedVoterId. Redirecting to Login.")
+                currentScreen = Screen.Login
+                return // Exit when block early
+            }
             VotingScreen(
-                election = screen.election, // Pass the election from the state
-                onVoteConfirmedBiometrically = { confirmedElection, selectedOption ->
-                    Log.i("AppNavigator", "Vote confirmed for ${confirmedElection.title}, option: $selectedOption")
-                    // For MVP, navigate back to election list after vote.
-                    // TODO: Here you would typically send the vote to a backend/blockchain.
-                    // For now, we simulate success and navigate.
-                    currentScreen = Screen.ElectionList
+                anonymizedVoterId = voterId,
+                election = screen.election,
+                onVoteConfirmedAndSubmitted = { confirmedElection, selectedOption ->
+                    Log.i("AppNavigator", "Vote confirmed and submitted for ${confirmedElection.title}, option: $selectedOption")
+                    currentScreen = Screen.ElectionList // Navigate back to election list
                 },
                 onNavigateBack = {
                     Log.d("AppNavigator", "Navigating back from VotingScreen to ElectionList.")

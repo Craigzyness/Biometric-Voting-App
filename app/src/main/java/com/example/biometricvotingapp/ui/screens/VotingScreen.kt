@@ -14,22 +14,29 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
+import com.example.biometricvotingapp.data.network.ApiService
+import com.example.biometricvotingapp.data.network.dto.VoteRequest
+import com.example.biometricvotingapp.data.repository.VotingRepository
 import com.example.biometricvotingapp.domain.model.Election
 import com.example.biometricvotingapp.utils.BiometricAuthManager
 import com.example.biometricvotingapp.utils.BiometricAvailabilityStatus
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VotingScreen(
+    anonymizedVoterId: String, // <<<< Added this parameter
     election: Election,
-    // Renamed and repurposed: called after biometric success
-    onVoteConfirmedBiometrically: (election: Election, selectedOption: String) -> Unit,
+    // Renamed and repurposed: called after biometric success AND backend success
+    onVoteConfirmedAndSubmitted: (election: Election, selectedOption: String) -> Unit,
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
     val activity = LocalContext.current as? FragmentActivity
 
     val biometricAuthManager = remember { BiometricAuthManager(context) }
+    val votingRepository = remember { VotingRepository(ApiService.instance) }
+    val coroutineScope = rememberCoroutineScope()
 
     var selectedOption by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
@@ -126,19 +133,37 @@ fun VotingScreen(
                                 electionTitle = election.title,
                                 selectedOption = currentSelectedOption,
                                 onSuccess = { authResult ->
-                                    isLoading = false
-                                    Log.i("VotingScreen", "Vote Biometric Auth Succeeded. AuthResult: $authResult")
+                                    Log.i("VotingScreen", "Vote Biometric Auth Succeeded. AuthResult: $authResult. Submitting to server...")
+                                    // isLoading is already true from the button click for biometrics.
+                                    // It will be set to false after network call.
 
-                                    // === This is the new post-vote confirmation logic for MVP ===
-                                    voteSuccessfullyCast = true
-                                    statusMessage = "Vote for '${election.title}' (Option: '$currentSelectedOption') submitted for processing!"
-                                    // ============================================================
+                                    coroutineScope.launch {
+                                        val voteRequest = VoteRequest(
+                                            anonymizedVoterId = anonymizedVoterId, // Use the passed-in ID
+                                            electionId = election.id,
+                                            selectedOption = currentSelectedOption
+                                        )
+                                        val voteResult = votingRepository.submitVote(voteRequest)
+                                        isLoading = false // Network call finished
 
-                                    // Still call the external callback if MainActivity or other parent needs to know
-                                    onVoteConfirmedBiometrically(election, currentSelectedOption)
+                                        voteResult.fold(
+                                            onSuccess = { backendResponse ->
+                                                voteSuccessfullyCast = true
+                                                statusMessage = backendResponse.message // "Vote submitted successfully..."
+                                                Log.i("VotingScreen", "Backend vote submission successful: ${backendResponse.message}")
+                                                onVoteConfirmedAndSubmitted(election, currentSelectedOption) // Navigate on success
+                                            },
+                                            onFailure = { error ->
+                                                // voteSuccessfullyCast remains false
+                                                statusMessage = "Backend Vote Submission Failed: ${error.message}"
+                                                Log.e("VotingScreen", "Backend vote submission error: ${error.message}")
+                                                // Do not navigate. User can potentially retry if the button is re-enabled.
+                                            }
+                                        )
+                                    }
                                 },
                                 onError = { errString ->
-                                    isLoading = false
+                                    isLoading = false // Biometric error
                                     statusMessage = "Vote Confirmation Error: $errString"
                                     Log.e("VotingScreen", "Vote Biometric Auth Error: $errString")
                                 },
@@ -199,8 +224,9 @@ val previewElectionSample = Election(
 // fun PreviewVotingScreen() {
 //     // YourAppTheme { // Replace with your app's theme
 //         VotingScreen(
+//             anonymizedVoterId = "previewVoterId",
 //             election = previewElectionSample,
-//             onVoteConfirmedBiometrically = { election, option -> println("Vote for ${election.title} - $option confirmed (Preview)") },
+//             onVoteConfirmedAndSubmitted = { election, option -> println("Vote for ${election.title} - $option confirmed (Preview)") },
 //             onNavigateBack = { println("Navigate back clicked (Preview)") }
 //         )
 //     // }

@@ -2,16 +2,37 @@ package com.example.biometricvotingapp.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.biometricvotingapp.data.network.ApiService
+import com.example.biometricvotingapp.data.network.dto.ElectionDto
+import com.example.biometricvotingapp.data.repository.VotingRepository
 import com.example.biometricvotingapp.domain.model.Election // Import the Election data class
 // import androidx.compose.ui.tooling.preview.Preview // Uncomment for preview
 
@@ -23,43 +44,90 @@ import com.example.biometricvotingapp.domain.model.Election // Import the Electi
  */
 
 // TODO: In a real app, this list would come from a ViewModel, which fetches it from a repository/backend.
-// For MVP, we'll define sample data directly here or pass it as a parameter.
+// For MVP, this list is fetched from the backend.
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ElectionListScreen(
-    elections: List<Election>, // The list of elections to display
     onElectionClicked: (Election) -> Unit, // Callback when an election is clicked
     // TODO: Add callbacks for other actions like logout, refresh, etc.
     // onLogoutClicked: () -> Unit
 ) {
+    // Instantiate repository - In a real app, use ViewModel and DI
+    val votingRepository = remember { VotingRepository(ApiService.instance) }
+
+    var electionsState by remember { mutableStateOf<List<ElectionDto>?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(Unit) { // Fetch elections when the screen is first composed
+        isLoading = true
+        val result = votingRepository.getElections()
+        result.fold(
+            onSuccess = { fetchedElections ->
+                electionsState = fetchedElections
+                isLoading = false
+            },
+            onFailure = { error ->
+                errorMessage = error.message ?: "An unknown error occurred."
+                isLoading = false
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("Available Elections") })
         }
     ) { paddingValues ->
-        if (elections.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(16.dp),
-                contentAlignment = androidx.compose.ui.Alignment.Center
-            ) {
-                Text("No elections available at the moment.")
+        when {
+            isLoading -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(paddingValues),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(top = 8.dp, bottom = 8.dp) // Add some padding around the list
-            ) {
-                items(elections, key = { election -> election.id }) { election ->
-                    ElectionListItem(
-                        election = election,
-                        onClicked = { onElectionClicked(election) }
-                    )
-                    Divider() // Adds a line between items
+            errorMessage != null -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(paddingValues),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "Error: $errorMessage", color = MaterialTheme.colorScheme.error)
+                }
+            }
+            electionsState.isNullOrEmpty() -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(paddingValues),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("No elections available at the moment.")
+                }
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(top = 8.dp, bottom = 8.dp)
+                ) {
+                    items(electionsState!!, key = { electionDto -> electionDto.id }) { electionDto ->
+                        // Map ElectionDto to domain model Election for now
+                        val domainElection = Election(
+                            id = electionDto.id,
+                            title = electionDto.title,
+                            description = electionDto.description ?: "", // Handle possible null description
+                            options = electionDto.options
+                            // Note: electionCode, status, startTimestamp, endTimestamp from DTO are not in domain.model.Election
+                            // If needed, domain.model.Election should be updated or these fields used directly.
+                        )
+                        ElectionListItem(
+                            election = domainElection,
+                            onClicked = { onElectionClicked(domainElection) }
+                        )
+                        Divider()
+                    }
                 }
             }
         }

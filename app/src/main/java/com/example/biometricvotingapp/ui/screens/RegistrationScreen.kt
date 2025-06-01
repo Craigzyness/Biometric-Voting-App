@@ -11,9 +11,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
+import com.example.biometricvotingapp.data.network.ApiService
+import com.example.biometricvotingapp.data.repository.VotingRepository
 import com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator
 import com.example.biometricvotingapp.utils.BiometricAuthManager
 import com.example.biometricvotingapp.utils.BiometricAvailabilityStatus
+import kotlinx.coroutines.launch
 // import androidx.compose.ui.tooling.preview.Preview // Uncomment for preview
 
 /**
@@ -34,10 +37,13 @@ fun RegistrationScreen(
     // It's better to manage manager instances via ViewModel and DI in a real app.
     // For this step, instantiating directly for simplicity.
     val biometricAuthManager = remember { BiometricAuthManager(context) }
+    // Instantiate repository - In a real app, use ViewModel and DI
+    val votingRepository = remember { VotingRepository(ApiService.instance) }
+    val coroutineScope = rememberCoroutineScope()
 
     var isLoading by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
-    var registeredId by remember { mutableStateOf<String?>(null) }
+    // var registeredId by remember { mutableStateOf<String?>(null) } // Keep for local ID, not for UI blocking directly
 
 
     Scaffold(
@@ -93,25 +99,46 @@ fun RegistrationScreen(
                                 onSuccess = { authResult ->
                                     isLoading = false
                                     // CRITICAL: Call the updated Anonymized ID Generator
-                                    val generatedId = AnonymizedIdGenerator.generate(context, authResult) // Pass context
-                                    if (generatedId != null) {
-                                        // Keep local state updates for immediate feedback if desired
-                                        registeredId = generatedId
-                                        statusMessage = "Registration Processing..." // Or similar before calling callback
-                                        Log.i("RegistrationScreen", "Biometric Auth Succeeded. Secure ID (first 8 chars): ${generatedId.take(8)}")
-                                        onRegistrationSuccess(generatedId) // Signal success to the caller
+                                    // Local Anonymized ID Generation
+                                    val generatedAnonymizedId = AnonymizedIdGenerator.generate(context, authResult)
+
+                                    if (generatedAnonymizedId != null) {
+                                        statusMessage = "Local ID generated. Registering with server..."
+                                        Log.i("RegistrationScreen", "Local Biometric Auth Succeeded. Secure ID (first 8 chars): ${generatedAnonymizedId.take(8)}")
+
+                                        // Launch a coroutine to call the backend
+                                        coroutineScope.launch {
+                                            isLoading = true // Show loading for network call specifically
+                                            val registrationResult = votingRepository.registerVoter(generatedAnonymizedId)
+                                            isLoading = false
+
+                                            registrationResult.fold(
+                                                onSuccess = { backendResponse ->
+                                                    statusMessage = backendResponse.message // "Voter registered successfully."
+                                                    Log.i("RegistrationScreen", "Backend registration successful: ${backendResponse.message}")
+                                                    // registeredId = generatedAnonymizedId // Keep local state if needed
+                                                    onRegistrationSuccess(generatedAnonymizedId) // Navigate on success
+                                                },
+                                                onFailure = { error ->
+                                                    statusMessage = "Backend Registration Failed: ${error.message}"
+                                                    Log.e("RegistrationScreen", "Backend registration error: ${error.message}")
+                                                    // Do not navigate if backend registration fails. User can retry.
+                                                }
+                                            )
+                                        }
                                     } else {
-                                        statusMessage = "Registration Error: Failed to generate secure ID."
+                                        isLoading = false // Stop loading if local ID generation failed
+                                        statusMessage = "Registration Error: Failed to generate secure ID locally."
                                         Log.e("RegistrationScreen", "Failed to generate secure ID after biometric auth.")
                                     }
                                 },
                                 onError = { errString ->
-                                    isLoading = false
+                                    isLoading = false // Stop loading on biometric error
                                     statusMessage = "Registration Error: $errString"
                                     Log.e("RegistrationScreen", "Biometric Auth Error: $errString")
                                 },
                                 onFailed = {
-                                    isLoading = false
+                                    isLoading = false // Stop loading on biometric failure
                                     statusMessage = "Registration Failed: Fingerprint not recognized. Please try again."
                                     Log.w("RegistrationScreen", "Biometric Auth Failed.")
                                 }
@@ -131,7 +158,7 @@ fun RegistrationScreen(
                         }
                     }
                 },
-                enabled = !isLoading && registeredId == null, // Disable if loading or already registered in this session
+                enabled = !isLoading, //isLoading now covers both biometric and network
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
