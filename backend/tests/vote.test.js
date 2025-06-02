@@ -386,4 +386,165 @@ describe('/api/v1/submitVote', () => {
         });
     });
     // --- END New Input Validation Tests for /submitVote ---
+
+    it('should submit a vote successfully with a mixed-case anonymizedVoterId (due to normalization)', async () => {
+        const lowerCaseId = `voterwithmixedcase${Date.now()}`.toLowerCase();
+        const mixedCaseId = lowerCaseId.replace(/t/g, 'T').replace(/a/g, 'A'); // e.g., voTerwiThmixedcAsE...
+
+        // Register with lowercase ID
+        const voter = await seedVoter(dbPool, { anonymizedVoterId: lowerCaseId });
+        const electionId = await seedElection(dbPool, createActiveElectionPayload('MIXCASE'));
+
+        const votePayload = {
+            anonymizedVoterId: mixedCaseId, // Submit with mixed case
+            electionId: electionId,
+            selectedOption: 'Option C'
+        };
+
+        const response = await request(app)
+            .post('/api/v1/submitVote')
+            .send(votePayload);
+
+        expect(response.statusCode).toBe(201);
+        expect(response.body).toHaveProperty('message', 'Vote submitted successfully.');
+        
+        // Verify in DB that the vote is associated with the normalized (lowercase) voter ID's record
+        const dbResult = await dbPool.query(
+            'SELECT v.* FROM "Votes" vt JOIN "Voters" v ON vt.voter_id = v.id WHERE vt.election_id = $1 AND v.anonymized_voter_id = $2',
+            [electionId, lowerCaseId]
+        );
+        expect(dbResult.rows.length).toBe(1);
+        expect(dbResult.rows[0].anonymized_voter_id).toBe(lowerCaseId);
+    });
+
+    // --- BEGIN New Time Boundary Tests for /submitVote ---
+    describe('Time Boundary Conditions for /submitVote', () => {
+        let voter;
+        const electionCodeBase = 'TIMEBND';
+
+        beforeEach(async () => {
+            voter = await seedVoter(dbPool, { anonymizedVoterId: `voter_time_boundary_${Date.now()}` });
+        });
+
+        it('should return 403 Forbidden when voting before election start_timestamp', async () => {
+            const now = Date.now();
+            const electionId = await seedElection(dbPool, {
+                electionCode: `${electionCodeBase}_FUTURE`,
+                title: 'Future Election Test',
+                description: 'This election has not started yet.',
+                options: ['Opt X', 'Opt Y'],
+                startTimestamp: new Date(now + 1000 * 60 * 60).toISOString(), // Starts in 1 hour
+                endTimestamp: new Date(now + 2000 * 60 * 60).toISOString(),   // Ends in 2 hours
+                status: 'ACTIVE' // Status is active, but time is future
+            });
+
+            const votePayload = {
+                anonymizedVoterId: voter.anonymized_voter_id,
+                electionId: electionId,
+                selectedOption: 'Opt X'
+            };
+            const response = await request(app).post('/api/v1/submitVote').send(votePayload);
+            expect(response.statusCode).toBe(403);
+            expect(response.body.error).toBe('Election is not currently active or open for voting.');
+        });
+
+        it('should return 403 Forbidden when voting after election end_timestamp', async () => {
+            const now = Date.now();
+            const electionId = await seedElection(dbPool, {
+                electionCode: `${electionCodeBase}_PAST`,
+                title: 'Past Election Test',
+                description: 'This election has already ended.',
+                options: ['Opt X', 'Opt Y'],
+                startTimestamp: new Date(now - 2000 * 60 * 60).toISOString(), // Started 2 hours ago
+                endTimestamp: new Date(now - 1000 * 60 * 60).toISOString(),   // Ended 1 hour ago
+                status: 'ACTIVE' // Status is active, but time is past
+            });
+
+            const votePayload = {
+                anonymizedVoterId: voter.anonymized_voter_id,
+                electionId: electionId,
+                selectedOption: 'Opt X'
+            };
+            const response = await request(app).post('/api/v1/submitVote').send(votePayload);
+            expect(response.statusCode).toBe(403);
+            expect(response.body.error).toBe('Election is not currently active or open for voting.');
+        });
+
+        it('should allow voting if current time is exactly start_timestamp (or just after)', async () => {
+            // To avoid millisecond race conditions, set start_timestamp a tiny bit in the past
+            // or rely on the <= check in server.js: `now < election.start_timestamp` means exact start time fails.
+            // Let's test the boundary as per code: now < start_timestamp is forbidden.
+            // So, if now IS start_timestamp, it should be allowed.
+            // For a robust test, let's set start_timestamp to be 1 second ago.
+            const now = Date.now();
+            const electionId = await seedElection(dbPool, {
+                electionCode: `${electionCodeBase}_JUST_STARTED`,
+                title: 'Just Started Election',
+                options: ['Opt X', 'Opt Y'],
+                startTimestamp: new Date(now - 1000).toISOString(), // Started 1 second ago
+                endTimestamp: new Date(now + 1000 * 60 * 60).toISOString(), // Ends in 1 hour
+                status: 'ACTIVE'
+            });
+
+            const votePayload = {
+                anonymizedVoterId: voter.anonymized_voter_id,
+                electionId: electionId,
+                selectedOption: 'Opt X'
+            };
+            const response = await request(app).post('/api/v1/submitVote').send(votePayload);
+            expect(response.statusCode).toBe(201);
+        });
+
+        it('should allow voting if current time is just before end_timestamp', async () => {
+            // Test condition: now > election.end_timestamp is forbidden.
+            // So if now IS end_timestamp, it should be forbidden.
+            // Let's test for just before end_timestamp.
+            const now = Date.now();
+            const electionId = await seedElection(dbPool, {
+                electionCode: `${electionCodeBase}_ENDING_SOON`,
+                title: 'Ending Soon Election',
+                options: ['Opt X', 'Opt Y'],
+                startTimestamp: new Date(now - 1000 * 60 * 60).toISOString(), // Started 1 hour ago
+                endTimestamp: new Date(now + 1000 * 5).toISOString(), // Ends in 5 seconds
+                status: 'ACTIVE'
+            });
+
+            const votePayload = {
+                anonymizedVoterId: voter.anonymized_voter_id,
+                electionId: electionId,
+                selectedOption: 'Opt X'
+            };
+            const response = await request(app).post('/api/v1/submitVote').send(votePayload);
+            expect(response.statusCode).toBe(201);
+
+            // Optional: Wait for it to pass and then try to vote (should fail)
+            // This can make tests slow and flaky, so usually avoided or done carefully.
+            // await new Promise(resolve => setTimeout(resolve, 6000)); // Wait 6 seconds
+            // const responseAfterEnd = await request(app).post('/api/v1/submitVote').send(votePayload);
+            // expect(responseAfterEnd.statusCode).toBe(403);
+        });
+        
+        it('should return 403 if current time is exactly end_timestamp or just after', async () => {
+            const now = Date.now();
+            const electionId = await seedElection(dbPool, {
+                electionCode: `${electionCodeBase}_JUST_ENDED`,
+                title: 'Just Ended Election',
+                options: ['Opt X', 'Opt Y'],
+                startTimestamp: new Date(now - 1000 * 60 * 60).toISOString(), // Started 1 hour ago
+                endTimestamp: new Date(now - 1000).toISOString(), // Ended 1 second ago (to ensure it's past)
+                status: 'ACTIVE'
+            });
+        
+            const votePayload = {
+                anonymizedVoterId: voter.anonymized_voter_id,
+                electionId: electionId,
+                selectedOption: 'Opt X'
+            };
+            const response = await request(app).post('/api/v1/submitVote').send(votePayload);
+            expect(response.statusCode).toBe(403);
+            expect(response.body.error).toBe('Election is not currently active or open for voting.');
+        });
+
+    });
+    // --- END New Time Boundary Tests for /submitVote ---
 });

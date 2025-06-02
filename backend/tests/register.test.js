@@ -125,4 +125,32 @@ describe('/api/v1/register', () => {
         expect(response.statusCode).toBe(201);
         expect(response.body.voter.anonymizedVoterId).toBe(validHexId);
     });
+
+    it('should treat mixed-case anonymizedVoterIds as the same (due to lowercase normalization)', async () => {
+        const idMixedCase = 'A1b2C3d4E5f6A1b2C3d4E5f6A1b2C3d4E5f6A1b2C3d4E5f6A1b2C3d4E5f61234';
+        const idLowerCase = idMixedCase.toLowerCase();
+
+        // Register with mixed case
+        let response = await request(app)
+            .post('/api/v1/register')
+            .send({ anonymizedVoterId: idMixedCase });
+        
+        expect(response.statusCode).toBe(201);
+        expect(response.body.voter.anonymizedVoterId).toBe(idLowerCase); // Should be stored as lowercase
+
+        // Attempt to register with lowercase (should be a conflict)
+        response = await request(app)
+            .post('/api/v1/register')
+            .send({ anonymizedVoterId: idLowerCase });
+        expect(response.statusCode).toBe(409);
+        expect(response.body).toHaveProperty('error', 'This anonymizedVoterId is already registered.');
+
+        // Attempt to register with another mixed case (should also be a conflict)
+        const idAnotherMixedCase = 'a1B2c3D4e5F6a1B2c3D4e5F6a1B2c3D4e5F6a1B2c3D4e5F6a1B2c3D4e5F61234';
+        response = await request(app)
+            .post('/api/v1/register')
+            .send({ anonymizedVoterId: idAnotherMixedCase });
+        expect(response.statusCode).toBe(409);
+        expect(response.body).toHaveProperty('error', 'This anonymizedVoterId is already registered.');
+    });
 });

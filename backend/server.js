@@ -4,8 +4,39 @@ const { Pool } = require('pg');
 const helmet = require('helmet'); // Import helmet
 const morgan = require('morgan'); // Added for request logging
 const rateLimit = require('express-rate-limit'); // Added for rate limiting
+const winston = require('winston'); // Added for structured logging
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Configure Winston Logger
+const logger = winston.createLogger({
+    level: process.env.NODE_ENV === 'development' ? 'debug' : 'info',
+    format: winston.format.combine(
+        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+        winston.format.errors({ stack: true }), // Log stack traces
+        winston.format.splat(),
+        winston.format.json()
+    ),
+    defaultMeta: { service: 'biometric-voting-backend' },
+    transports: [
+        new winston.transports.Console()
+    ]
+});
+
+// Configure console transport format based on NODE_ENV
+if (process.env.NODE_ENV === 'development') {
+    logger.transports[0].format = winston.format.combine(
+        winston.format.colorize(),
+        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+        winston.format.printf(info => `${info.timestamp} ${info.level}: ${info.message}` + (info.stack ? `\n${info.stack}` : ''))
+    );
+} else {
+    // For production, use JSON format for console as well
+    logger.transports[0].format = winston.format.combine(
+        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+        winston.format.json()
+   );
+}
 
 // Regex for validations
 const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -18,7 +49,7 @@ app.use(helmet());
 // Middleware to parse JSON bodies
 app.use(express.json());
 
-// Request logging middleware (morgan)
+// Request logging middleware (morgan) - will log to console independently of Winston for now
 app.use(morgan('dev'));
 
 // Database Configuration from Environment Variables with Defaults
@@ -42,13 +73,13 @@ const pool = new Pool({
 
 // Test DB Connection and Create Tables
 async function initializeDatabase() {
-    console.log(`Attempting to connect to database: ${DB_NAME} on ${DB_HOST}:${DB_PORT} as user ${DB_USER}`);
+    logger.info(`Attempting to connect to database: ${DB_NAME} on ${DB_HOST}:${DB_PORT} as user ${DB_USER}`);
     try {
         const client = await pool.connect();
-        console.log('Connected to PostgreSQL database successfully!');
+        logger.info('Connected to PostgreSQL database successfully!');
 
         // Create Voters Table
-        console.log('Checking/Creating "Voters" table...');
+        logger.info('Checking/Creating "Voters" table...');
         await client.query(`
             CREATE TABLE IF NOT EXISTS Voters (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -59,10 +90,10 @@ async function initializeDatabase() {
                 updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
         `);
-        console.log('Table "Voters" checked/created successfully.');
+        logger.info('Table "Voters" checked/created successfully.');
 
         // Create Elections Table
-        console.log('Checking/Creating "Elections" table...');
+        logger.info('Checking/Creating "Elections" table...');
         await client.query(`
             CREATE TABLE IF NOT EXISTS Elections (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -78,17 +109,17 @@ async function initializeDatabase() {
                 CONSTRAINT check_election_dates CHECK (start_timestamp < end_timestamp)
             );
         `);
-        console.log('Table "Elections" checked/created successfully.');
+        logger.info('Table "Elections" checked/created successfully.');
 
         // Add Composite Index for Elections table
-        console.log('Checking/Creating index "idx_elections_status_start_end" on "Elections" table...');
+        logger.info('Checking/Creating index "idx_elections_status_start_end" on "Elections" table...');
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_elections_status_start_end ON Elections (status, start_timestamp, end_timestamp);
         `);
-        console.log('Index "idx_elections_status_start_end" on "Elections" table checked/created successfully.');
+        logger.info('Index "idx_elections_status_start_end" on "Elections" table checked/created successfully.');
 
         // Create Votes Table
-        console.log('Checking/Creating "Votes" table...');
+        logger.info('Checking/Creating "Votes" table...');
         await client.query(`
             CREATE TABLE IF NOT EXISTS Votes (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -102,13 +133,13 @@ async function initializeDatabase() {
                 UNIQUE (voter_id, election_id) -- Critical constraint
             );
         `);
-        console.log('Table "Votes" checked/created successfully.');
+        logger.info('Table "Votes" checked/created successfully.');
 
         // Add sample election data if table is empty
-        console.log('Checking if "Elections" table needs sample data...');
+        logger.info('Checking if "Elections" table needs sample data...');
         const { rows } = await client.query('SELECT COUNT(*) AS count FROM Elections');
         if (rows[0].count === '0') {
-            console.log('No elections found, inserting sample data...');
+            logger.info('No elections found, inserting sample data...');
             const sampleElections = [
                 {
                     election_code: "PRES2024", title: "Student Council President 2024", description: "Vote for the next Student Council President.",
@@ -133,12 +164,12 @@ async function initializeDatabase() {
                     [election.election_code, election.title, election.description, election.options, election.start_timestamp, election.end_timestamp, election.status]
                 );
             }
-            console.log('Sample elections inserted.');
+            logger.info('Sample elections inserted.');
         }
 
         client.release();
     } catch (err) {
-        console.error('Failed to initialize database or create tables:', err.stack);
+        logger.error('Failed to initialize database or create tables:', err);
         // process.exit(1); // Exit if DB init fails, or handle more gracefully
     }
 }
@@ -182,31 +213,36 @@ apiRouter.post('/register', registrationLimiter, async (req, res) => {
 
     // Validation for anonymizedVoterId
     if (!anonymizedVoterId || typeof anonymizedVoterId !== 'string' || anonymizedVoterId.trim() === '') {
+        logger.warn('Invalid registration attempt: Missing or empty anonymizedVoterId', { body: req.body });
         return res.status(400).json({ error: "Invalid or missing anonymizedVoterId." });
     }
     const trimmedAnonymizedVoterId = anonymizedVoterId.trim();
     if (trimmedAnonymizedVoterId.length > 255) {
+        logger.warn('Invalid registration attempt: anonymizedVoterId too long', { length: trimmedAnonymizedVoterId.length });
         return res.status(400).json({ error: "anonymizedVoterId must not exceed 255 characters." });
     }
     if (!sha256HexRegex.test(trimmedAnonymizedVoterId)) {
+        logger.warn('Invalid registration attempt: anonymizedVoterId invalid format', { id: trimmedAnonymizedVoterId });
         return res.status(400).json({ error: "anonymizedVoterId must be a valid 64-character hex string." });
     }
+    const finalNormalizedVoterId = trimmedAnonymizedVoterId.toLowerCase();
 
     try {
         // Check if voter already exists
-        let result = await pool.query('SELECT * FROM Voters WHERE anonymized_voter_id = $1', [trimmedAnonymizedVoterId]);
+        let result = await pool.query('SELECT * FROM Voters WHERE anonymized_voter_id = $1', [finalNormalizedVoterId]);
         if (result.rows.length > 0) {
+            logger.warn(`Attempt to register existing voter: ${trimmedAnonymizedVoterId}`);
             return res.status(409).json({ error: "This anonymizedVoterId is already registered." });
         }
 
         // Insert new voter
         result = await pool.query(
             'INSERT INTO Voters (anonymized_voter_id) VALUES ($1) RETURNING id, anonymized_voter_id, registration_timestamp, is_eligible',
-            [anonymizedVoterId.trim()]
+            [finalNormalizedVoterId]
         );
         const newVoter = result.rows[0];
 
-        console.log(`New voter registered: ${newVoter.anonymized_voter_id}`);
+        logger.info(`New voter registered: ${newVoter.anonymized_voter_id}`); // This will be lowercase from DB
         res.status(201).json({
             message: "Voter registered successfully.",
             voter: {
@@ -217,7 +253,7 @@ apiRouter.post('/register', registrationLimiter, async (req, res) => {
             }
         });
     } catch (err) {
-        console.error('Error during /register:', err);
+        logger.error('Error during /register', { error: err.message, stack: err.stack, detail: err.detail, code: err.code });
         res.status(500).json({ error: "An unexpected error occurred on the server." });
     }
 });
@@ -230,30 +266,33 @@ apiRouter.get('/elections', async (req, res) => {
 
     if (anonymizedVoterId) {
         if (typeof anonymizedVoterId !== 'string' || anonymizedVoterId.trim() === '') {
+            logger.warn('Invalid /elections request: anonymizedVoterId provided but empty or not a string.', { query: req.query });
             return res.status(400).json({ error: "anonymizedVoterId must be a non-empty string if provided." });
         }
         const trimmedAnonymizedVoterId = anonymizedVoterId.trim();
         if (trimmedAnonymizedVoterId.length > 255) {
+            logger.warn('Invalid /elections request: anonymizedVoterId too long.', { query: req.query });
             return res.status(400).json({ error: "anonymizedVoterId must not exceed 255 characters." });
         }
         if (!sha256HexRegex.test(trimmedAnonymizedVoterId)) {
+            logger.warn('Invalid /elections request: anonymizedVoterId invalid format.', { query: req.query });
             return res.status(400).json({ error: "anonymizedVoterId must be a valid 64-character hex string if provided." });
         }
+        const normalizedQueryVoterId = trimmedAnonymizedVoterId.toLowerCase();
 
         try {
-            const voterResult = await pool.query('SELECT id FROM Voters WHERE anonymized_voter_id = $1', [trimmedAnonymizedVoterId]);
+            const voterResult = await pool.query('SELECT id FROM Voters WHERE anonymized_voter_id = $1', [normalizedQueryVoterId]);
             if (voterResult.rows.length > 0) {
                 internalVoterId = voterResult.rows[0].id;
+                logger.debug(`Fetching votes for voterId: ${internalVoterId} for /elections endpoint.`);
                 const votesResult = await pool.query('SELECT election_id FROM Votes WHERE voter_id = $1', [internalVoterId]);
                 votesResult.rows.forEach(row => votedElectionIds.add(row.election_id));
+                logger.debug(`Voter ${internalVoterId} has voted in ${votedElectionIds.size} elections.`);
+            } else {
+                logger.info(`No voter found for anonymizedVoterId: ${trimmedAnonymizedVoterId} in /elections query.`);
             }
-            // If voter not found, internalVoterId remains null, and votedElectionIds remains empty.
-            // This is fine, elections will just have hasVoted: false.
         } catch (err) {
-            console.error('Error fetching voter or votes status for /elections:', err);
-            // Do not send 500 here, proceed as if no (valid) anonymizedVoterId was provided
-            // to ensure the elections list is still accessible.
-            // Reset internalVoterId and votedElectionIds to be safe.
+            logger.error('Error fetching voter or votes status for /elections (non-critical for election listing)', { error: err.message, stack: err.stack, query: req.query });
             internalVoterId = null;
             votedElectionIds.clear();
         }
@@ -261,13 +300,14 @@ apiRouter.get('/elections', async (req, res) => {
 
     try {
         const now = new Date();
-        // Filter for active elections based on time and status
+        logger.debug('Fetching active elections from database.');
         const electionsResult = await pool.query(
             "SELECT id, election_code, title, description, options, start_timestamp, end_timestamp, status FROM Elections WHERE start_timestamp <= $1 AND end_timestamp >= $1 AND status = 'ACTIVE' ORDER BY start_timestamp DESC",
             [now]
         );
 
         if (electionsResult.rows.length === 0) {
+            logger.info('No active elections found.');
             return res.status(200).json({ elections: [] });
         }
 
@@ -282,10 +322,10 @@ apiRouter.get('/elections', async (req, res) => {
             status: election.status,
             hasVoted: internalVoterId ? votedElectionIds.has(election.id) : false,
         }));
-
+        logger.info(`Returning ${electionsForApi.length} active elections.`);
         res.status(200).json({ elections: electionsForApi });
     } catch (err) {
-        console.error('Error during /elections main query:', err);
+        logger.error('Error during /elections main query', { error: err.message, stack: err.stack, detail: err.detail, code: err.code });
         res.status(500).json({ error: "An unexpected error occurred on the server while fetching elections." });
     }
 });
@@ -297,155 +337,127 @@ apiRouter.post('/submitVote', voteSubmissionLimiter, async (req, res) => {
 
     // --- Input Validation ---
     const errors = [];
-
-    // anonymizedVoterId Validation
+    // (Validation logic as implemented previously)
+    let finalAnonymizedVoterId = '';
     if (!anonymizedVoterId || typeof anonymizedVoterId !== 'string' || anonymizedVoterId.trim() === '') {
         errors.push("anonymizedVoterId is required and must be a non-empty string.");
     } else {
         const trimmedVoterId = anonymizedVoterId.trim();
-        if (trimmedVoterId.length > 255) {
-            errors.push("anonymizedVoterId must not exceed 255 characters.");
-        }
-        if (!sha256HexRegex.test(trimmedVoterId)) {
-            errors.push("anonymizedVoterId must be a valid 64-character hex string.");
-        }
+        if (trimmedVoterId.length > 255) { errors.push("anonymizedVoterId must not exceed 255 characters."); }
+        if (!sha256HexRegex.test(trimmedVoterId)) { errors.push("anonymizedVoterId must be a valid 64-character hex string."); }
+        else { finalAnonymizedVoterId = trimmedVoterId.toLowerCase(); } // Normalize here after format validation
     }
 
-    // electionId Validation
-    if (!electionId || typeof electionId !== 'string' || electionId.trim() === '') {
-        errors.push("electionId is required and must be a non-empty string.");
+    let finalElectionId = '';
     } else {
-        const trimmedElectionId = electionId.trim();
-        if (!uuidRegex.test(trimmedElectionId)) {
-            errors.push("electionId must be a valid UUID.");
-        }
+        finalElectionId = electionId.trim(); // Trimmed for UUID test
+        if (!uuidRegex.test(finalElectionId)) { errors.push("electionId must be a valid UUID."); }
     }
 
-    // selectedOption Validation
+    let finalSelectedOption = '';
     if (!selectedOption || typeof selectedOption !== 'string' || selectedOption.trim() === '') {
         errors.push("selectedOption is required and must be a non-empty string.");
     } else {
-        const trimmedSelectedOption = selectedOption.trim();
-        if (trimmedSelectedOption.length > 255) {
-            errors.push("selectedOption must not exceed 255 characters.");
-        }
+        finalSelectedOption = selectedOption.trim(); // Trimmed for length test
+        if (finalSelectedOption.length > 255) { errors.push("selectedOption must not exceed 255 characters."); }
     }
-
-    // encryptedProof Validation (optional)
     const hasEncryptedProof = encryptedProof !== undefined && encryptedProof !== null;
     let proofIsNonEmptyString = false;
     if (hasEncryptedProof) {
-        if (typeof encryptedProof !== 'string') {
-            errors.push("If provided, encryptedProof must be a string.");
-        } else if (encryptedProof.trim() === '') {
-            errors.push("If provided as a string, encryptedProof must not be empty.");
-        } else {
-            proofIsNonEmptyString = true;
-            if (!base64Regex.test(encryptedProof.trim())) {
-                errors.push("If provided, encryptedProof must be a valid Base64 encoded string.");
-            }
-        }
+        if (typeof encryptedProof !== 'string') { errors.push("If provided, encryptedProof must be a string."); }
+        else if (encryptedProof.trim() === '') { errors.push("If provided as a string, encryptedProof must not be empty."); }
+        else { proofIsNonEmptyString = true; if (!base64Regex.test(encryptedProof.trim())) { errors.push("If provided, encryptedProof must be a valid Base64 encoded string."); } }
     }
-
-    // iv Validation (optional)
     const hasIv = iv !== undefined && iv !== null;
     let ivIsNonEmptyString = false;
     if (hasIv) {
-        if (typeof iv !== 'string') {
-            errors.push("If provided, iv must be a string.");
-        } else if (iv.trim() === '') {
-            errors.push("If provided as a string, iv must not be empty.");
-        } else {
-            ivIsNonEmptyString = true;
-            if (!base64Regex.test(iv.trim())) {
-                errors.push("If provided, iv must be a valid Base64 encoded string.");
-            }
-        }
+        if (typeof iv !== 'string') { errors.push("If provided, iv must be a string."); }
+        else if (iv.trim() === '') { errors.push("If provided as a string, iv must not be empty."); }
+        else { ivIsNonEmptyString = true; if (!base64Regex.test(iv.trim())) { errors.push("If provided, iv must be a valid Base64 encoded string."); } }
     }
-
-    // Conditional Presence for encryptedProof and iv
-    if (proofIsNonEmptyString !== ivIsNonEmptyString) {
-        errors.push("encryptedProof and iv must be provided together as non-empty strings, or not at all.");
-    }
+    if (proofIsNonEmptyString !== ivIsNonEmptyString) { errors.push("encryptedProof and iv must be provided together as non-empty strings, or not at all."); }
 
     if (errors.length > 0) {
+        logger.warn('Invalid vote submission request', { errors: errors, body: req.body });
         return res.status(400).json({ error: errors.join(" ") });
     }
     // --- End of Input Validation ---
 
-    const finalAnonymizedVoterId = anonymizedVoterId.trim();
-    const finalElectionId = electionId.trim();
-    const finalSelectedOption = selectedOption.trim();
+    // Use already normalized/trimmed values if they passed validation, or original if not applicable for normalization step above
+    // finalAnonymizedVoterId is already normalized if it passed validation
+    // finalElectionId is already trimmed if it passed validation
+    // finalSelectedOption is already trimmed if it passed validation
     const finalEncryptedProof = proofIsNonEmptyString ? encryptedProof.trim() : null;
     const finalIv = ivIsNonEmptyString ? iv.trim() : null;
 
     try {
         // 1. Get internal voter_id and check eligibility
+        // Use finalAnonymizedVoterId which is now lowercase
         const voterResult = await pool.query('SELECT id, is_eligible FROM Voters WHERE anonymized_voter_id = $1', [finalAnonymizedVoterId]);
         if (voterResult.rows.length === 0) {
+            logger.warn(`Vote attempt by unregistered voter: ${finalAnonymizedVoterId}`);
             return res.status(403).json({ error: "Voter not registered." });
         }
         const voter = voterResult.rows[0];
         if (!voter.is_eligible) {
+            logger.warn(`Vote attempt by ineligible voter: ${finalAnonymizedVoterId} (DB ID: ${voter.id})`);
             return res.status(403).json({ error: "Voter is not eligible to vote." });
         }
         const internalVoterId = voter.id;
 
         // 2. Get election details and check if active and option is valid
-        // Assuming electionId from request is the UUID 'id' from Elections table.
         const electionResult = await pool.query('SELECT id, options, start_timestamp, end_timestamp, status FROM Elections WHERE id = $1', [finalElectionId]);
         if (electionResult.rows.length === 0) {
+            logger.warn(`Vote attempt for non-existent election: ${finalElectionId}`);
             return res.status(404).json({ error: "Election not found." });
         }
         const election = electionResult.rows[0];
         const now = new Date();
         if (now < election.start_timestamp || now > election.end_timestamp || election.status !== 'ACTIVE') {
+            logger.warn(`Vote attempt for inactive/non-open election: ${finalElectionId} by voter ${finalAnonymizedVoterId}`);
             return res.status(403).json({ error: "Election is not currently active or open for voting." });
         }
-        // Ensure options is an array before checking includes. DB stores JSONB, which pg driver parses.
         if (!Array.isArray(election.options) || !election.options.includes(finalSelectedOption)) {
+            logger.warn(`Vote attempt with invalid option "${finalSelectedOption}" for election ${finalElectionId} by voter ${finalAnonymizedVoterId}`);
             return res.status(400).json({ error: "Invalid option selected for this election." });
         }
         const internalElectionId = election.id;
 
         // 3. Attempt to insert vote (double voting check by DB unique constraint)
         try {
-            // Use validated and trimmed values: finalSelectedOption, finalEncryptedProof, finalIv
             const voteInsertResult = await pool.query(
                 'INSERT INTO Votes (voter_id, election_id, selected_option_value, encrypted_proof, iv) VALUES ($1, $2, $3, $4, $5) RETURNING id, election_id, selected_option_value, cast_at_timestamp',
                 [internalVoterId, internalElectionId, finalSelectedOption, finalEncryptedProof, finalIv]
             );
             const newVote = voteInsertResult.rows[0];
 
-            // Log core vote info for simulation, excluding sensitive cryptographic proof details
             const logDataForBlockchain = {
-                voteId: newVote.id, // Internal DB id for the vote
-                anonymizedVoterId: finalAnonymizedVoterId, // Original anonymized ID from request
-                electionId: newVote.election_id, // Internal election ID
+                voteId: newVote.id,
+                anonymizedVoterId: finalAnonymizedVoterId,
+                electionId: newVote.election_id,
                 selectedOption: newVote.selected_option_value,
                 castAtTimestamp: newVote.cast_at_timestamp,
-                // encryptedProof and iv are intentionally NOT logged here for security, even in simulation.
-                // Their presence in the DB is the important part.
             };
-            console.log(`SIMULATING BLOCKCHAIN RECORD (Append-Only Log Entry): ${JSON.stringify(logDataForBlockchain)}`);
+            logger.info(`SIMULATING BLOCKCHAIN RECORD (Append-Only Log Entry): ${JSON.stringify(logDataForBlockchain)}`);
 
             res.status(201).json({
-                message: "Vote submitted successfully.",
+                message: "Vote submitted successfully and recorded anonymously!", // Updated message
                 vote: {
                     voteId: newVote.id,
-                    electionId: newVote.election_id, // This is the internal UUID
+                    electionId: newVote.election_id,
                     selectedOption: newVote.selected_option_value,
                     castAtTimestamp: newVote.cast_at_timestamp
                 }
             });
         } catch (dbErr) {
             if (dbErr.code === '23505') { // Unique violation (double voting)
+                logger.warn(`Double voting attempt by voter ${finalAnonymizedVoterId} (DB ID: ${internalVoterId}) for election ${finalElectionId}`);
                 return res.status(409).json({ error: "Already voted in this election." });
             }
-            throw dbErr; // Re-throw other DB errors to be caught by outer try-catch
+            throw dbErr; 
         }
     } catch (err) {
-        console.error('Error during /submitVote:', err);
+        logger.error('Error during /submitVote', { error: err.message, stack: err.stack, detail: err.detail, code: err.code });
         res.status(500).json({ error: "An unexpected error occurred on the server." });
     }
 });
@@ -463,18 +475,12 @@ app.get('/', (req, res) => {
 
 // Start server only if not in test environment
 if (process.env.NODE_ENV !== 'test') {
-    // PRODUCTION NOTE:
-    // In a production environment, this Node.js server should run behind a
-    // reverse proxy (e.g., Nginx, Apache) that handles HTTPS termination,
-    // SSL certificates, and potentially load balancing.
-    // The following app.listen is suitable for development and
-    // for when the reverse proxy forwards plain HTTP requests to this server internally.
     app.listen(PORT, async () => {
-        await initializeDatabase(); // Initialize DB and tables before starting server
-        console.log(`Backend server listening on port ${PORT}`);
-        console.log('Using PostgreSQL for data persistence.');
-        console.log(`Using database: ${DB_NAME}`);
-        console.log('API endpoints are available under /api/v1');
+        await initializeDatabase(); 
+        logger.info(`Backend server listening on port ${PORT}`);
+        logger.info('Using PostgreSQL for data persistence.');
+        logger.info(`Using database: ${DB_NAME}`);
+        logger.info('API endpoints are available under /api/v1');
     });
 }
 

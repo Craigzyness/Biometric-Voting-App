@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Default configuration for Release builds: Enforce HTTPS -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Configuration for Debug builds: Allow cleartext for localhost (10.0.2.2 for emulator) -->
+    <debug-overrides>
+        <base-config cleartextTrafficPermitted="true">
+            <trust-anchors>
+                <certificates src="system" />
+                <!-- Allow user-added CAs for debugging proxies if needed -->
+                <!-- <certificates src="user" /> -->
+            </trust-anchors>
+        </base-config>
+        <!-- Specifically allow cleartext for 10.0.2.2 -->
+        <!-- Note: For a more specific rule, you could use <domain-config> for 10.0.2.2,
+             but <base-config cleartextTrafficPermitted="true"> under <debug-overrides>
+             is generally sufficient for allowing localhost HTTP during development.
+             If you wanted to enforce HTTPS for all other domains even in debug,
+             you'd make the debug <base-config> also cleartextTrafficPermitted="false"
+             and then add a specific <domain-config cleartextTrafficPermitted="true"> for 10.0.2.2.
+             For this app, allowing cleartext broadly in debug is fine. -->
+    </debug-overrides>
+</network-security-config>
