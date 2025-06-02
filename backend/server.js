@@ -224,35 +224,69 @@ apiRouter.post('/register', registrationLimiter, async (req, res) => {
 
 // GET /api/v1/elections
 apiRouter.get('/elections', async (req, res) => {
+    const { anonymizedVoterId } = req.query;
+    let internalVoterId = null;
+    const votedElectionIds = new Set();
+
+    if (anonymizedVoterId) {
+        if (typeof anonymizedVoterId !== 'string' || anonymizedVoterId.trim() === '') {
+            return res.status(400).json({ error: "anonymizedVoterId must be a non-empty string if provided." });
+        }
+        const trimmedAnonymizedVoterId = anonymizedVoterId.trim();
+        if (trimmedAnonymizedVoterId.length > 255) {
+            return res.status(400).json({ error: "anonymizedVoterId must not exceed 255 characters." });
+        }
+        if (!sha256HexRegex.test(trimmedAnonymizedVoterId)) {
+            return res.status(400).json({ error: "anonymizedVoterId must be a valid 64-character hex string if provided." });
+        }
+
+        try {
+            const voterResult = await pool.query('SELECT id FROM Voters WHERE anonymized_voter_id = $1', [trimmedAnonymizedVoterId]);
+            if (voterResult.rows.length > 0) {
+                internalVoterId = voterResult.rows[0].id;
+                const votesResult = await pool.query('SELECT election_id FROM Votes WHERE voter_id = $1', [internalVoterId]);
+                votesResult.rows.forEach(row => votedElectionIds.add(row.election_id));
+            }
+            // If voter not found, internalVoterId remains null, and votedElectionIds remains empty.
+            // This is fine, elections will just have hasVoted: false.
+        } catch (err) {
+            console.error('Error fetching voter or votes status for /elections:', err);
+            // Do not send 500 here, proceed as if no (valid) anonymizedVoterId was provided
+            // to ensure the elections list is still accessible.
+            // Reset internalVoterId and votedElectionIds to be safe.
+            internalVoterId = null;
+            votedElectionIds.clear();
+        }
+    }
+
     try {
         const now = new Date();
         // Filter for active elections based on time and status
-        const result = await pool.query(
+        const electionsResult = await pool.query(
             "SELECT id, election_code, title, description, options, start_timestamp, end_timestamp, status FROM Elections WHERE start_timestamp <= $1 AND end_timestamp >= $1 AND status = 'ACTIVE' ORDER BY start_timestamp DESC",
             [now]
         );
 
-        if (result.rows.length === 0) {
-            // Consistent with spec: 200 OK with empty list
+        if (electionsResult.rows.length === 0) {
             return res.status(200).json({ elections: [] });
         }
 
-        // Map database row names to API spec names (e.g., start_timestamp to startTimestamp)
-        const electionsForApi = result.rows.map(election => ({
+        const electionsForApi = electionsResult.rows.map(election => ({
             id: election.id,
             electionCode: election.election_code,
             title: election.title,
             description: election.description,
-            options: election.options, // Assuming options are stored correctly as JSON array strings
+            options: election.options,
             startTimestamp: election.start_timestamp,
             endTimestamp: election.end_timestamp,
-            status: election.status
+            status: election.status,
+            hasVoted: internalVoterId ? votedElectionIds.has(election.id) : false,
         }));
 
         res.status(200).json({ elections: electionsForApi });
     } catch (err) {
-        console.error('Error during /elections:', err);
-        res.status(500).json({ error: "An unexpected error occurred on the server." });
+        console.error('Error during /elections main query:', err);
+        res.status(500).json({ error: "An unexpected error occurred on the server while fetching elections." });
     }
 });
 

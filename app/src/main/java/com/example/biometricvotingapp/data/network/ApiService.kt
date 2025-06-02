@@ -21,7 +21,7 @@ interface ApiService {
     suspend fun registerVoter(@Body request: RegistrationRequest): Response<RegistrationResponse>
 
     @GET("elections")
-    suspend fun getElections(): Response<ElectionListResponse> // Updated to use ElectionListResponse
+    suspend fun getElections(@Query("anonymizedVoterId") anonymizedVoterId: String? = null): Response<ElectionListResponse>
 
     @POST("submitVote")
     suspend fun submitVote(@Body request: VoteRequest): Response<VoteResponse>

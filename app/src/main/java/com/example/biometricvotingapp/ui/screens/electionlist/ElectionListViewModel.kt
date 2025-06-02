@@ -23,8 +23,9 @@ sealed interface ElectionListUiState {
 }
 
 class ElectionListViewModel(
-    private val application: Application, // Or just Context
-    private val votingRepository: VotingRepository // Injected
+    private val application: Application, 
+    private val votingRepository: VotingRepository,
+    private val anonymizedVoterId: String? // Add anonymizedVoterId
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ElectionListUiState>(ElectionListUiState.Loading)
@@ -37,11 +38,11 @@ class ElectionListViewModel(
     fun loadElections() {
         viewModelScope.launch {
             _uiState.value = ElectionListUiState.Loading
-            if (BuildConfig.DEBUG) Log.d("ElectionListViewModel", "Fetching elections...")
-            val result = votingRepository.getElections()
+            if (BuildConfig.DEBUG) Log.d("ElectionListViewModel", "Fetching elections for voter ID: $anonymizedVoterId")
+            val result = votingRepository.getElections(anonymizedVoterId = anonymizedVoterId) // Pass the ID
             result.fold(
                 onSuccess = { electionDtoList ->
-                    if (BuildConfig.DEBUG) Log.d("ElectionListViewModel", "Fetched ${electionDtoList.size} elections DTOs.")
+                    if (BuildConfig.DEBUG) Log.d("ElectionListViewModel", "Fetched ${electionDtoList.size} elections DTOs for voter ID: $anonymizedVoterId.")
                     if (electionDtoList.isEmpty()) {
                         _uiState.value = ElectionListUiState.Empty
                     } else {
@@ -63,11 +64,12 @@ class ElectionListViewModel(
         return Election(
             id = dto.id,
             title = dto.title,
-            description = dto.description ?: "", // Handle nullable description
-            options = dto.options
+            description = dto.description ?: "",
+            options = dto.options,
+            hasVoted = dto.hasVoted ?: false // Map hasVoted, default to false if null
             // Note: ElectionDto has more fields (electionCode, status, timestamps)
             // which are not currently in the Election domain model.
-            // If needed, the Election domain model should be updated.
+            // If needed, the Election domain model should be updated for those too.
         )
     }
 }

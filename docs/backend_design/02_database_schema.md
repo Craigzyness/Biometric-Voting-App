@@ -1,6 +1,6 @@
 # Database Schema Design
 
-Date: YYYY-MM-DD
+Date: (Refer to Git history for the last update date of this document)
 
 This document outlines the proposed database schema for the Biometric Voting App. It assumes a relational database model (e.g., PostgreSQL) based on the considerations in `01_technology_stack_considerations.md`.
 
@@ -143,4 +143,3 @@ Records each vote cast by a voter for a specific election.
 *   Each `Vote` belongs to exactly one `Voter` and one `Election`.
 
 This schema provides a foundational structure for a persistent backend. Further details like specific indexing strategies beyond unique keys would be refined based on query patterns and performance testing.
-```

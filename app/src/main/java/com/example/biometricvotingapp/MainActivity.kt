@@ -103,7 +103,11 @@ fun AppNavigator() {
             )
         }
         is Screen.ElectionList -> {
-            val factory = com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewModelFactory(application, votingRepository)
+            val factory = com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewModelFactory(
+                application,
+                votingRepository,
+                currentAnonymizedId // Pass the anonymized ID
+            )
             val viewModel: com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewModel = viewModel(factory = factory)
             ElectionListScreen(
                 viewModel = viewModel,

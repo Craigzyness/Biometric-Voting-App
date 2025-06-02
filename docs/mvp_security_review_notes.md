@@ -1,6 +1,6 @@
 # MVP Security & Anonymity Review Notes (Thought Experiments)
 
-Date: YYYY-MM-DD
+Date: (Refer to Git history for the last update date of this document)
 
 This document summarizes key discussion points and potential areas for future hardening based on a conceptual review of the Biometric Voting App MVP's security and anonymity design. The current MVP relies heavily on on-device security and placeholder backend components.
 
@@ -52,4 +52,3 @@ For its defined scope (on-device focus, placeholder backend), the MVP's conceptu
 *   **Blockchain Design for Anonymity:** If/when moving to a real blockchain, carefully design the smart contracts and data stored on-chain to preserve voter anonymity as much as possible, balancing with auditability needs.
 
 This review is conceptual and based on the code and documentation. Actual on-device testing and penetration testing are vital next steps for security assurance.
-```

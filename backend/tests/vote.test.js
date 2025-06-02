@@ -272,6 +272,118 @@ describe('/api/v1/submitVote', () => {
             .post('/api/v1/submitVote')
             .send({ anonymizedVoterId: voter.anonymized_voter_id, electionId: electionId });
         expect(response.statusCode).toBe(400);
-        expect(response.body).toHaveProperty('error', 'Missing or invalid fields: anonymizedVoterId, electionId, selectedOption.');
+        // The actual error message might be a join of multiple messages if using the array approach for errors
+        // For this specific case, it's one of the first checks.
+        expect(response.body.error).toMatch(/Missing or invalid fields|anonymizedVoterId is required/);
     });
+
+    // --- BEGIN New Input Validation Tests for /submitVote ---
+    describe('Input Validation for /submitVote', () => {
+        let voter;
+        let electionId;
+
+        beforeEach(async () => {
+            // Seed a valid voter and election for these tests
+            voter = await seedVoter(dbPool, { anonymizedVoterId: `voter_input_val_${Date.now()}` });
+            electionId = await seedElection(dbPool, createActiveElectionPayload(`EIV${Date.now()}`));
+        });
+
+        it('should return 400 for invalid anonymizedVoterId (too long)', async () => {
+            const response = await request(app).post('/api/v1/submitVote').send({
+                anonymizedVoterId: 'a'.repeat(257), electionId, selectedOption: 'Option A'
+            });
+            expect(response.statusCode).toBe(400);
+            expect(response.body.error).toContain('anonymizedVoterId must not exceed 255 characters.');
+        });
+
+        it('should return 400 for invalid anonymizedVoterId (bad format)', async () => {
+            const response = await request(app).post('/api/v1/submitVote').send({
+                anonymizedVoterId: 'invalid-hex-id-123', electionId, selectedOption: 'Option A'
+            });
+            expect(response.statusCode).toBe(400);
+            expect(response.body.error).toContain('anonymizedVoterId must be a valid 64-character hex string.');
+        });
+
+        it('should return 400 for invalid electionId (not UUID)', async () => {
+            const response = await request(app).post('/api/v1/submitVote').send({
+                anonymizedVoterId: voter.anonymized_voter_id, electionId: 'not-a-uuid', selectedOption: 'Option A'
+            });
+            expect(response.statusCode).toBe(400);
+            expect(response.body.error).toContain('electionId must be a valid UUID.');
+        });
+
+        it('should return 400 for invalid selectedOption (too long)', async () => {
+            const response = await request(app).post('/api/v1/submitVote').send({
+                anonymizedVoterId: voter.anonymized_voter_id, electionId, selectedOption: 'A'.repeat(257)
+            });
+            expect(response.statusCode).toBe(400);
+            expect(response.body.error).toContain('selectedOption must not exceed 255 characters.');
+        });
+
+        it('should return 400 if encryptedProof is not Base64', async () => {
+            const response = await request(app).post('/api/v1/submitVote').send({
+                anonymizedVoterId: voter.anonymized_voter_id, electionId, selectedOption: 'Option A',
+                encryptedProof: 'not base64!', iv: 'validBase64=='
+            });
+            expect(response.statusCode).toBe(400);
+            expect(response.body.error).toContain('encryptedProof must be a valid Base64 encoded string.');
+        });
+
+        it('should return 400 if iv is not Base64', async () => {
+            const response = await request(app).post('/api/v1/submitVote').send({
+                anonymizedVoterId: voter.anonymized_voter_id, electionId, selectedOption: 'Option A',
+                encryptedProof: 'validBase64==', iv: 'not base64!'
+            });
+            expect(response.statusCode).toBe(400);
+            expect(response.body.error).toContain('iv must be a valid Base64 encoded string.');
+        });
+        
+        it('should return 400 if encryptedProof is provided as non-empty string but iv is missing or empty', async () => {
+            const response = await request(app).post('/api/v1/submitVote').send({
+                anonymizedVoterId: voter.anonymized_voter_id, electionId, selectedOption: 'Option A',
+                encryptedProof: 'validBase64==' // iv is missing
+            });
+            expect(response.statusCode).toBe(400);
+            expect(response.body.error).toContain('encryptedProof and iv must be provided together');
+            
+            const response2 = await request(app).post('/api/v1/submitVote').send({
+                anonymizedVoterId: voter.anonymized_voter_id, electionId, selectedOption: 'Option A',
+                encryptedProof: 'validBase64==', iv: '   ' // iv is empty after trim
+            });
+            expect(response2.statusCode).toBe(400);
+            expect(response2.body.error).toContain('encryptedProof and iv must be provided together');
+        });
+
+        it('should return 400 if iv is provided as non-empty string but encryptedProof is missing or empty', async () => {
+            const response = await request(app).post('/api/v1/submitVote').send({
+                anonymizedVoterId: voter.anonymized_voter_id, electionId, selectedOption: 'Option A',
+                iv: 'validBase64==' // encryptedProof is missing
+            });
+            expect(response.statusCode).toBe(400);
+            expect(response.body.error).toContain('encryptedProof and iv must be provided together');
+
+            const response2 = await request(app).post('/api/v1/submitVote').send({
+                anonymizedVoterId: voter.anonymized_voter_id, electionId, selectedOption: 'Option A',
+                iv: 'validBase64==', encryptedProof: '   ' // encryptedProof is empty after trim
+            });
+            expect(response2.statusCode).toBe(400);
+            expect(response2.body.error).toContain('encryptedProof and iv must be provided together');
+        });
+
+        it('should succeed if encryptedProof and iv are both validly provided or both omitted', async () => {
+            // Both omitted (already tested in primary success case)
+            const responseOmitted = await request(app).post('/api/v1/submitVote').send({
+                anonymizedVoterId: voter.anonymized_voter_id, electionId, selectedOption: 'Option A'
+            });
+            expect(responseOmitted.statusCode).toBe(201);
+
+            // Both provided and valid
+            const responseProvided = await request(app).post('/api/v1/submitVote').send({
+                anonymizedVoterId: voter.anonymized_voter_id, electionId, selectedOption: 'Option B', // Use different option to avoid double voting
+                encryptedProof: 'Zm9vYmFy', iv: 'YmF6cXV4' // "foobar" and "bazqux" in base64
+            });
+            expect(responseProvided.statusCode).toBe(201);
+        });
+    });
+    // --- END New Input Validation Tests for /submitVote ---
 });

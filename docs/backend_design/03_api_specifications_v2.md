@@ -1,6 +1,6 @@
 # API Endpoint Specifications (V2 - Real Backend)
 
-Date: YYYY-MM-DD
+Date: (Refer to Git history for the last update date of this document)
 
 This document refines the API endpoint specifications for the Biometric Voting App, assuming interaction with a persistent relational database (e.g., PostgreSQL) as defined in `02_database_schema.md`.
 
@@ -173,4 +173,3 @@ Submits a vote for a specific election by a registered voter.
 ---
 
 This V2 specification provides a more robust definition for backend development against a persistent database.
-```
