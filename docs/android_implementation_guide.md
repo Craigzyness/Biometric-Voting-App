@@ -1,5 +1,6 @@
 **Note:** This document served as an initial comprehensive guide for setting up the Android application and implementing core features. While many foundational aspects remain relevant (especially regarding Gradle setup, BiometricPrompt API usage, and security principles), specific implementation details or architectural choices (e.g., ViewModel patterns, exact ID generation strategy, use of `SecurityUtil` for vote proofing vs. ID encryption) may have evolved. The current codebase in the `app/` directory should always be considered the definitive source of truth for the latest implementation.
 
+**Note:** This document describes the initial setup, concepts, and early examples. The current codebase, particularly regarding ViewModel architecture, specific security utility classes (`AnonymizedIdGenerator.kt`, `SecureSaltProvider.kt`, `StableIdentifierProvider.kt`, `SecurityUtil.kt`), and the precise implementation of biometric prompts, should be considered the most up-to-date source of truth. This guide serves as a conceptual overview of key components.
 ---
 
 # Biometric Voting App - Complete Android Implementation Guide
@@ -253,13 +254,15 @@ app/
 │   │   │   ├── domain/                           # Business logic
 │   │   │   │   ├── model/                        # Data models/entities (e.g., User, Vote)
 │   │   │   │   ├── repository/                   # Repository interfaces (e.g., AuthRepository)
-│   │   │   │   └── viewmodel/                    # ViewModels for screens
+│   │   │   │   └── viewmodel/                    # ViewModels for screens (Note: In current project, ViewModels are often in `ui/screens/[feature_name]/[FeatureName]ViewModel.kt`)
 │   │   │   ├── data/                             # Data handling (repositories impl, data sources)
 │   │   │   │   ├── repository/                   # Repository implementations
 │   │   │   │   └── network/                      # Network API definitions and DTOs (if applicable)
 │   │   │   ├── utils/                            # Utility classes
 │   │   │   │   ├── BiometricManager.kt           # Handles biometric authentication logic
-│   │   │   │   └── SecurityUtil.kt               # Cryptographic operations, key management
+│   │   │   │   └── SecurityUtil.kt               # Provides utilities for biometric-bound encryption/decryption using Android Keystore and `BiometricPrompt.CryptoObject`. In this project, it's primarily used to encrypt/decrypt the 'vote proof' payload during the voting process, ensuring the proof is only accessible after successful biometric authentication.
+│   │   │   ├── domain/security/                  # Security related domain logic
+│   │   │   │   └── AnonymizedIdGenerator.kt      # Responsible for generating the primary, unique, and anonymized voter identifier. This ID is derived from a combination of a stable application identifier and a per-installation salt, with biometric authentication acting as a gatekeeper to this generation/retrieval process.
 │   │   │   └── MainActivity.kt                   # Main entry point Activity
 │   │   ├── res/                                  # Android resources (drawables, layouts, values)
 │   │   │   ├── values/
@@ -318,8 +321,9 @@ Add necessary permissions to `AndroidManifest.xml`:
 
 ## Core Implementation
 
-### BiometricManager (`utils/BiometricManager.kt`)
+### Biometric Authentication (`utils/BiometricAuthManager.kt`)
 Handles biometric authentication logic.
+The `BiometricAuthManager` class provides specialized methods for different authentication contexts: `promptForRegistration`, `promptForLogin`, and `promptForVoteConfirmation`. The `promptForVoteConfirmation` method specifically integrates with `BiometricPrompt.CryptoObject` to enable operations (like encryption/decryption of vote proof via `SecurityUtil.kt`) that are bound to the successful biometric scan.
 
 ```kotlin
 // app/src/main/java/com/example/biometricvotingapp/utils/BiometricManager.kt
@@ -339,40 +343,40 @@ class BiometricAuthManager(private val context: Context) {
 
     private val biometricManager = BiometricManager.from(context)
 
-    fun canAuthenticate(): BiometricAuthStatus {
+    fun canAuthenticate(): BiometricAvailabilityStatus {
         return when (biometricManager.canAuthenticate(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)) {
             BiometricManager.BIOMETRIC_SUCCESS => {
                 Timber.d("Biometric authentication is available.")
-                BiometricAuthStatus.READY
+                BiometricAvailabilityStatus.READY
             }
             BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE -> {
                 Timber.e("No biometric features available on this device.")
-                BiometricAuthStatus.NOT_AVAILABLE
+                BiometricAvailabilityStatus.NOT_AVAILABLE
             }
             BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE -> {
                 Timber.e("Biometric features are currently unavailable.")
-                BiometricAuthStatus.TEMPORARILY_UNAVAILABLE
+                BiometricAvailabilityStatus.TEMPORARILY_UNAVAILABLE
             }
             BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> {
                 Timber.w("The user hasn't associated any biometric credentials with their account.")
                 // Optionally, prompt the user to enroll biometrics.
-                BiometricAuthStatus.NO_CREDENTIALS_ENROLLED
+                BiometricAvailabilityStatus.NO_CREDENTIALS_ENROLLED
             }
             BiometricManager.BIOMETRIC_ERROR_SECURITY_UPDATE_REQUIRED -> {
                 Timber.w("Biometric security update required.")
-                BiometricAuthStatus.SECURITY_UPDATE_REQUIRED
+                BiometricAvailabilityStatus.SECURITY_UPDATE_REQUIRED
             }
             BiometricManager.BIOMETRIC_ERROR_UNSUPPORTED -> {
                 Timber.e("Biometric authentication is unsupported.")
-                BiometricAuthStatus.UNSUPPORTED
+                BiometricAvailabilityStatus.UNSUPPORTED
             }
             BiometricManager.BIOMETRIC_STATUS_UNKNOWN -> {
                 Timber.e("Biometric status unknown.")
-                BiometricAuthStatus.UNKNOWN
+                BiometricAvailabilityStatus.UNKNOWN
             }
             else -> {
                 Timber.e("Unknown biometric status.")
-                BiometricAuthStatus.UNKNOWN
+                BiometricAvailabilityStatus.UNKNOWN
             }
         }
     }
@@ -383,7 +387,7 @@ class BiometricAuthManager(private val context: Context) {
         onFailure: (errorCode: Int, errString: CharSequence) -> Unit,
         onCancel: () -> Unit // Optional: handle user cancellation
     ) {
-        if (canAuthenticate() != BiometricAuthStatus.READY && canAuthenticate() != BiometricAuthStatus.NO_CREDENTIALS_ENROLLED) {
+        if (canAuthenticate() != BiometricAvailabilityStatus.READY && canAuthenticate() != BiometricAvailabilityStatus.NO_CREDENTIALS_ENROLLED) {
             // Handle cases where biometric auth is not possible right now, e.g. show a message to user
             // NO_CREDENTIALS_ENROLLED is handled by the system prompt to set up credentials.
             onFailure(
@@ -438,7 +442,7 @@ class BiometricAuthManager(private val context: Context) {
     }
 }
 
-enum class BiometricAuthStatus {
+enum class BiometricAvailabilityStatus { // Name updated
     READY,
     NOT_AVAILABLE,
     TEMPORARILY_UNAVAILABLE,
@@ -471,12 +475,20 @@ An implementation of this would exist in `app/src/main/java/com/example/biometri
 
 ## Security Implementation
 
-### SecurityUtil (`utils/SecurityUtil.kt`)
-Handles cryptographic operations like key generation and management for use with BiometricPrompt.
+### Anonymized Voter ID Generation (`AnonymizedIdGenerator.kt`)
+The primary anonymized voter ID is generated by `AnonymizedIdGenerator.kt`. This process involves:
+1.  Retrieving a stable application identifier (via `StableIdentifierProvider.kt`).
+2.  Retrieving a securely stored, per-installation salt (via `SecureSaltProvider.kt`).
+3.  Concatenating these two values and hashing the result using SHA-256.
+Biometric authentication serves as a gatekeeper: it must be successful before the app attempts to generate (for the first time) or re-derive (for login/access) this anonymized ID. The biometric data itself is not part of the hash input.
+
+### Biometric-Bound Data Encryption/Decryption (`SecurityUtil.kt`)
+The `SecurityUtil.kt` class (if implemented as per earlier examples focusing on Keystore and `CryptoObject`) is designed for encrypting and decrypting specific pieces of data, bound to a biometric authentication event. For instance, in this application, it's used to encrypt a 'vote proof' before it's sent to the backend. This proof can then only be constructed or verified locally by operations that are unlocked via a successful biometric scan using the `CryptoObject` associated with a key in the Android Keystore. This mechanism is distinct from the anonymized voter ID generation.
 
 ```kotlin
-// app/src/main/java/com/example/biometricvotingapp/utils/SecurityUtil.kt
-package com.example.biometricvotingapp.utils
+```kotlin
+// Example structure for SecurityUtil.kt (conceptual, for biometric-bound encryption)
+// package com.example.biometricvotingapp.utils
 
 import android.os.Build
 import android.security.keystore.KeyGenParameterSpec
@@ -629,13 +641,13 @@ import com.example.biometricvotingapp.utils.BiometricAuthStatus
 
 @Composable
 fun BiometricAuthButton(
-    biometricAuthStatus: BiometricAuthStatus,
+    biometricAuthStatus: BiometricAvailabilityStatus, // Updated type
     onAuthClick: () -> Unit,
     isLoading: Boolean = false
 ) {
     Button(
         onClick = onAuthClick,
-        enabled = biometricAuthStatus == BiometricAuthStatus.READY || biometricAuthStatus == BiometricAuthStatus.NO_CREDENTIALS_ENROLLED  && !isLoading,
+        enabled = biometricAuthStatus == BiometricAvailabilityStatus.READY || biometricAuthStatus == BiometricAvailabilityStatus.NO_CREDENTIALS_ENROLLED  && !isLoading, // Updated enum
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 16.dp)
@@ -716,7 +728,7 @@ class MainActivity : FragmentActivity() { // Use FragmentActivity for BiometricP
                     color = MaterialTheme.colorScheme.background
                 ) {
                     val context = LocalContext.current as FragmentActivity // For BiometricPrompt
-                    var biometricAuthStatus by remember { mutableStateOf(biometricAuthManager.canAuthenticate()) }
+                    var biometricAuthStatus by remember { mutableStateOf(biometricAuthManager.canAuthenticate()) } // Uses BiometricAvailabilityStatus due to canAuthenticate()
                     var authMessage by remember { mutableStateOf("Check Biometric Status") }
                     var authMessageColor by remember { mutableStateOf(MaterialTheme.colorScheme.onBackground) }
                     var isLoading by remember { mutableStateOf(false) }
@@ -812,10 +824,10 @@ class MainActivity : FragmentActivity() { // Use FragmentActivity for BiometricP
 
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Biometric Status: ${biometricAuthStatus.name}",
+                            text = "Biometric Status: ${biometricAuthStatus.name}", // References BiometricAvailabilityStatus
                             style = MaterialTheme.typography.bodySmall
                         )
-                         if (biometricAuthStatus == BiometricAuthStatus.NO_CREDENTIALS_ENROLLED) {
+                         if (biometricAuthStatus == BiometricAvailabilityStatus.NO_CREDENTIALS_ENROLLED) { // Updated enum
                             Text("Please enroll biometrics in your device settings.", color = RedError)
                         }
 
@@ -880,7 +892,7 @@ class BiometricAuthManagerTest {
         every { mockSystemBiometricManager.canAuthenticate(any()) } returns SystemBiometricManager.BIOMETRIC_SUCCESS
 
         val status = biometricAuthManager.canAuthenticate()
-        assertEquals(BiometricAuthStatus.READY, status)
+        assertEquals(BiometricAvailabilityStatus.READY, status) // Updated enum
     }
 
     @Test
@@ -890,10 +902,10 @@ class BiometricAuthManagerTest {
         every { mockSystemBiometricManager.canAuthenticate(any()) } returns SystemBiometricManager.BIOMETRIC_ERROR_NO_HARDWARE
 
         val status = biometricAuthManager.canAuthenticate()
-        assertEquals(BiometricAuthStatus.NOT_AVAILABLE, status)
+        assertEquals(BiometricAvailabilityStatus.NOT_AVAILABLE, status) // Updated enum
     }
 
-    // Add more tests for other BiometricAuthStatus cases:
+    // Add more tests for other BiometricAvailabilityStatus cases: // Updated enum name
     // - BIOMETRIC_ERROR_HW_UNAVAILABLE -> TEMPORARILY_UNAVAILABLE
     // - BIOMETRIC_ERROR_NONE_ENROLLED -> NO_CREDENTIALS_ENROLLED
     // ...and other statuses.

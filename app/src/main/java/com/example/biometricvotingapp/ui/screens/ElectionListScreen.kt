@@ -14,8 +14,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -24,6 +29,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -44,19 +50,26 @@ import com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewMo
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ElectionListScreen(
-    viewModel: ElectionListViewModel, // ViewModel instance is now passed directly
-    onElectionClicked: (Election) -> Unit, // Callback when an election is clicked
-    // TODO: Add callbacks for other actions like logout, refresh, etc.
-    // onLogoutClicked: () -> Unit
+    viewModel: ElectionListViewModel,
+    onElectionClicked: (Election) -> Unit,
+    onLogout: () -> Unit // Callback for logout
 ) {
-    // val application = LocalContext.current.applicationContext as Application // No longer needed here
-    // val factory = ElectionListViewModelFactory(application, votingRepository) // Factory logic moved to caller
     // val viewModel: ElectionListViewModel = viewModel(factory = factory) // VM is passed in
     val uiState by viewModel.uiState.collectAsState()
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Available Elections") })
+            TopAppBar(
+                title = { Text("Available Elections") },
+                actions = {
+                    IconButton(onClick = onLogout) {
+                        Icon(
+                            imageVector = Icons.Filled.ExitToApp,
+                            contentDescription = "Logout"
+                        )
+                    }
+                }
+            )
         }
     ) { paddingValues ->
         when (val state = uiState) {
@@ -120,10 +133,22 @@ fun ElectionListItem(
             modifier = Modifier
                 .padding(16.dp) // Padding inside the card
         ) {
-            Text(
-                text = election.title,
-                style = MaterialTheme.typography.titleMedium
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = election.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f) // Allow text to take available space
+                )
+                if (election.hasVoted) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Filled.CheckCircle,
+                        contentDescription = "Voted",
+                        tint = MaterialTheme.colorScheme.primary, // Or a custom green
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
             // Optionally display description if it's short and relevant for the list view
             if (election.description.isNotBlank()) {
                 Spacer(modifier = Modifier.height(4.dp))

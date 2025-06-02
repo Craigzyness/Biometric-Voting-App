@@ -11,7 +11,8 @@ data class Election(
     val id: String = UUID.randomUUID().toString(), // Default to a random UUID for simplicity
     val title: String,
     val description: String,
-    val options: List<String> // List of choices for the election
+    val options: List<String>,
+    val hasVoted: Boolean = false // Default to false
 )
 
 /**

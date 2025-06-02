@@ -46,11 +46,7 @@ This document provides textual descriptions of the key UI screens and outlines t
 
 ### 5. Vote Confirmation Screen/Dialog
 *   **Purpose:** Inform the user about the status of their vote submission.
-*   **Key UI Elements (can be a full screen or a prominent dialog):**
-    *   **Confirmation Message:** Clear text, e.g., "Vote Successfully Submitted for Processing!" or "Your vote has been securely and anonymously recorded."
-    *   **Emphasis on Anonymity:** Reiterate that the vote is anonymous.
-    *   **"OK" or "Back to Elections" Button:** To dismiss the confirmation and navigate, for example, back to the Election List screen.
-    *   **(Optional) Transaction ID/Reference:** For MVP, this is likely not needed, but for a real blockchain, a reference might be displayed.
+*   **Description:** After a user confirms their vote with biometrics on the **Voting Screen**, a status message (success or failure) is displayed directly on the Voting Screen. If the vote submission to the backend is successful, the application automatically navigates the user back to the **Election List Screen**. There isn't a separate, manually dismissed confirmation screen/dialog; the feedback is integrated into the Voting Screen, followed by navigation.
 
 ## II. User Experience (UX) Flow
 

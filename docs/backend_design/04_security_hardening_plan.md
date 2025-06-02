@@ -45,6 +45,7 @@ This document outlines essential security hardening measures that must be consid
         *   `X-Frame-Options: DENY` (or `SAMEORIGIN`)
         *   `Content-Security-Policy` (CSP) - More relevant for web frontends but can be set for APIs too.
         *   `Referrer-Policy`
+    *   For Node.js/Express applications, libraries like `helmet` can simplify the implementation of many essential security headers.
 
 6.  **Comprehensive and Secure Logging:**
     *   Log relevant security events (e.g., successful/failed registrations, vote submissions, authorization failures, significant errors).

@@ -7,9 +7,11 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons // Required for ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowBack // Required for ArrowBack
 import androidx.compose.material3.*
+import androidx.compose.foundation.background
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -134,12 +136,18 @@ fun VotingScreen(
 
             Column(Modifier.selectableGroup()) {
                 election.options.forEach { optionText ->
+                    val isSelected = selectedOptionState == optionText
                     Row(
                         Modifier
                             .fillMaxWidth()
                             .height(56.dp)
+                            .clip(MaterialTheme.shapes.small) // Clip for background shape
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f)
+                                else Color.Transparent
+                            )
                             .selectable(
-                                selected = (selectedOptionState == optionText),
+                                selected = isSelected,
                                 onClick = {
                                     selectedOptionState = optionText
                                     if (uiState is VotingUiState.Error || uiState is VotingUiState.Success) {
@@ -153,7 +161,7 @@ fun VotingScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(
-                            selected = (selectedOptionState == optionText),
+                            selected = isSelected,
                             onClick = null, // Recommended for accessibility with selectable parent
                             modifier = Modifier.testTag("option_radio_$optionText") // Test tag for RadioButton
                         )

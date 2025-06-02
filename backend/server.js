@@ -2,14 +2,24 @@
 const express = require('express');
 const { Pool } = require('pg');
 const helmet = require('helmet'); // Import helmet
+const morgan = require('morgan'); // Added for request logging
+const rateLimit = require('express-rate-limit'); // Added for rate limiting
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Regex for validations
+const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const sha256HexRegex = /^[a-f0-9]{64}$/i;
 
 // Apply Helmet middleware for security headers
 app.use(helmet());
 
 // Middleware to parse JSON bodies
 app.use(express.json());
+
+// Request logging middleware (morgan)
+app.use(morgan('dev'));
 
 // Database Configuration from Environment Variables with Defaults
 const DB_HOST = process.env.DB_HOST || 'localhost';
@@ -38,6 +48,7 @@ async function initializeDatabase() {
         console.log('Connected to PostgreSQL database successfully!');
 
         // Create Voters Table
+        console.log('Checking/Creating "Voters" table...');
         await client.query(`
             CREATE TABLE IF NOT EXISTS Voters (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -51,6 +62,7 @@ async function initializeDatabase() {
         console.log('Table "Voters" checked/created successfully.');
 
         // Create Elections Table
+        console.log('Checking/Creating "Elections" table...');
         await client.query(`
             CREATE TABLE IF NOT EXISTS Elections (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -68,7 +80,15 @@ async function initializeDatabase() {
         `);
         console.log('Table "Elections" checked/created successfully.');
 
+        // Add Composite Index for Elections table
+        console.log('Checking/Creating index "idx_elections_status_start_end" on "Elections" table...');
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_elections_status_start_end ON Elections (status, start_timestamp, end_timestamp);
+        `);
+        console.log('Index "idx_elections_status_start_end" on "Elections" table checked/created successfully.');
+
         // Create Votes Table
+        console.log('Checking/Creating "Votes" table...');
         await client.query(`
             CREATE TABLE IF NOT EXISTS Votes (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -85,6 +105,7 @@ async function initializeDatabase() {
         console.log('Table "Votes" checked/created successfully.');
 
         // Add sample election data if table is empty
+        console.log('Checking if "Elections" table needs sample data...');
         const { rows } = await client.query('SELECT COUNT(*) AS count FROM Elections');
         if (rows[0].count === '0') {
             console.log('No elections found, inserting sample data...');
@@ -126,17 +147,54 @@ async function initializeDatabase() {
 // --- API Routes ---
 const apiRouter = express.Router(); // Create a router for /api/v1
 
+// Configure Rate Limiters
+const generalApiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP to 100 requests per windowMs
+    message: { error: "Too many requests from this IP, please try again after 15 minutes." },
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
+const registrationLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // limit each IP to 5 registration attempts per windowMs
+    message: { error: "Too many registration attempts from this IP, please try again after 15 minutes." },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+const voteSubmissionLimiter = rateLimit({
+    windowMs: 10 * 60 * 1000, // 10 minutes
+    max: 10, // limit each IP to 10 vote submission attempts per windowMs
+    message: { error: "Too many vote submission attempts from this IP, please try again after 10 minutes." },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+// Apply general limiter to all routes on apiRouter first
+apiRouter.use(generalApiLimiter);
+
 // POST /api/v1/register
-apiRouter.post('/register', async (req, res) => {
+// Apply specific stricter limiter for registration
+apiRouter.post('/register', registrationLimiter, async (req, res) => {
     const { anonymizedVoterId } = req.body;
 
+    // Validation for anonymizedVoterId
     if (!anonymizedVoterId || typeof anonymizedVoterId !== 'string' || anonymizedVoterId.trim() === '') {
         return res.status(400).json({ error: "Invalid or missing anonymizedVoterId." });
+    }
+    const trimmedAnonymizedVoterId = anonymizedVoterId.trim();
+    if (trimmedAnonymizedVoterId.length > 255) {
+        return res.status(400).json({ error: "anonymizedVoterId must not exceed 255 characters." });
+    }
+    if (!sha256HexRegex.test(trimmedAnonymizedVoterId)) {
+        return res.status(400).json({ error: "anonymizedVoterId must be a valid 64-character hex string." });
     }
 
     try {
         // Check if voter already exists
-        let result = await pool.query('SELECT * FROM Voters WHERE anonymized_voter_id = $1', [anonymizedVoterId.trim()]);
+        let result = await pool.query('SELECT * FROM Voters WHERE anonymized_voter_id = $1', [trimmedAnonymizedVoterId]);
         if (result.rows.length > 0) {
             return res.status(409).json({ error: "This anonymizedVoterId is already registered." });
         }
@@ -199,17 +257,97 @@ apiRouter.get('/elections', async (req, res) => {
 });
 
 // POST /api/v1/submitVote
-apiRouter.post('/submitVote', async (req, res) => {
-    const { anonymizedVoterId, electionId, selectedOption } = req.body;
+// Apply specific stricter limiter for vote submission
+apiRouter.post('/submitVote', voteSubmissionLimiter, async (req, res) => {
+    const { anonymizedVoterId, electionId, selectedOption, encryptedProof, iv } = req.body;
 
-    if (!anonymizedVoterId || !electionId || !selectedOption ||
-        typeof anonymizedVoterId !== 'string' || typeof electionId !== 'string' || typeof selectedOption !== 'string') {
-        return res.status(400).json({ error: "Missing or invalid fields: anonymizedVoterId, electionId, selectedOption." });
+    // --- Input Validation ---
+    const errors = [];
+
+    // anonymizedVoterId Validation
+    if (!anonymizedVoterId || typeof anonymizedVoterId !== 'string' || anonymizedVoterId.trim() === '') {
+        errors.push("anonymizedVoterId is required and must be a non-empty string.");
+    } else {
+        const trimmedVoterId = anonymizedVoterId.trim();
+        if (trimmedVoterId.length > 255) {
+            errors.push("anonymizedVoterId must not exceed 255 characters.");
+        }
+        if (!sha256HexRegex.test(trimmedVoterId)) {
+            errors.push("anonymizedVoterId must be a valid 64-character hex string.");
+        }
     }
+
+    // electionId Validation
+    if (!electionId || typeof electionId !== 'string' || electionId.trim() === '') {
+        errors.push("electionId is required and must be a non-empty string.");
+    } else {
+        const trimmedElectionId = electionId.trim();
+        if (!uuidRegex.test(trimmedElectionId)) {
+            errors.push("electionId must be a valid UUID.");
+        }
+    }
+
+    // selectedOption Validation
+    if (!selectedOption || typeof selectedOption !== 'string' || selectedOption.trim() === '') {
+        errors.push("selectedOption is required and must be a non-empty string.");
+    } else {
+        const trimmedSelectedOption = selectedOption.trim();
+        if (trimmedSelectedOption.length > 255) {
+            errors.push("selectedOption must not exceed 255 characters.");
+        }
+    }
+
+    // encryptedProof Validation (optional)
+    const hasEncryptedProof = encryptedProof !== undefined && encryptedProof !== null;
+    let proofIsNonEmptyString = false;
+    if (hasEncryptedProof) {
+        if (typeof encryptedProof !== 'string') {
+            errors.push("If provided, encryptedProof must be a string.");
+        } else if (encryptedProof.trim() === '') {
+            errors.push("If provided as a string, encryptedProof must not be empty.");
+        } else {
+            proofIsNonEmptyString = true;
+            if (!base64Regex.test(encryptedProof.trim())) {
+                errors.push("If provided, encryptedProof must be a valid Base64 encoded string.");
+            }
+        }
+    }
+
+    // iv Validation (optional)
+    const hasIv = iv !== undefined && iv !== null;
+    let ivIsNonEmptyString = false;
+    if (hasIv) {
+        if (typeof iv !== 'string') {
+            errors.push("If provided, iv must be a string.");
+        } else if (iv.trim() === '') {
+            errors.push("If provided as a string, iv must not be empty.");
+        } else {
+            ivIsNonEmptyString = true;
+            if (!base64Regex.test(iv.trim())) {
+                errors.push("If provided, iv must be a valid Base64 encoded string.");
+            }
+        }
+    }
+
+    // Conditional Presence for encryptedProof and iv
+    if (proofIsNonEmptyString !== ivIsNonEmptyString) {
+        errors.push("encryptedProof and iv must be provided together as non-empty strings, or not at all.");
+    }
+
+    if (errors.length > 0) {
+        return res.status(400).json({ error: errors.join(" ") });
+    }
+    // --- End of Input Validation ---
+
+    const finalAnonymizedVoterId = anonymizedVoterId.trim();
+    const finalElectionId = electionId.trim();
+    const finalSelectedOption = selectedOption.trim();
+    const finalEncryptedProof = proofIsNonEmptyString ? encryptedProof.trim() : null;
+    const finalIv = ivIsNonEmptyString ? iv.trim() : null;
 
     try {
         // 1. Get internal voter_id and check eligibility
-        const voterResult = await pool.query('SELECT id, is_eligible FROM Voters WHERE anonymized_voter_id = $1', [anonymizedVoterId]);
+        const voterResult = await pool.query('SELECT id, is_eligible FROM Voters WHERE anonymized_voter_id = $1', [finalAnonymizedVoterId]);
         if (voterResult.rows.length === 0) {
             return res.status(403).json({ error: "Voter not registered." });
         }
@@ -221,8 +359,7 @@ apiRouter.post('/submitVote', async (req, res) => {
 
         // 2. Get election details and check if active and option is valid
         // Assuming electionId from request is the UUID 'id' from Elections table.
-        // If election_code is used by client, query by election_code instead.
-        const electionResult = await pool.query('SELECT id, options, start_timestamp, end_timestamp, status FROM Elections WHERE id = $1', [electionId]);
+        const electionResult = await pool.query('SELECT id, options, start_timestamp, end_timestamp, status FROM Elections WHERE id = $1', [finalElectionId]);
         if (electionResult.rows.length === 0) {
             return res.status(404).json({ error: "Election not found." });
         }
@@ -232,24 +369,24 @@ apiRouter.post('/submitVote', async (req, res) => {
             return res.status(403).json({ error: "Election is not currently active or open for voting." });
         }
         // Ensure options is an array before checking includes. DB stores JSONB, which pg driver parses.
-        if (!Array.isArray(election.options) || !election.options.includes(selectedOption)) {
+        if (!Array.isArray(election.options) || !election.options.includes(finalSelectedOption)) {
             return res.status(400).json({ error: "Invalid option selected for this election." });
         }
         const internalElectionId = election.id;
 
         // 3. Attempt to insert vote (double voting check by DB unique constraint)
         try {
-            const { encryptedProof, iv } = req.body; // Get new fields from request body
+            // Use validated and trimmed values: finalSelectedOption, finalEncryptedProof, finalIv
             const voteInsertResult = await pool.query(
                 'INSERT INTO Votes (voter_id, election_id, selected_option_value, encrypted_proof, iv) VALUES ($1, $2, $3, $4, $5) RETURNING id, election_id, selected_option_value, cast_at_timestamp',
-                [internalVoterId, internalElectionId, selectedOption, encryptedProof || null, iv || null]
+                [internalVoterId, internalElectionId, finalSelectedOption, finalEncryptedProof, finalIv]
             );
             const newVote = voteInsertResult.rows[0];
 
             // Log core vote info for simulation, excluding sensitive cryptographic proof details
             const logDataForBlockchain = {
                 voteId: newVote.id, // Internal DB id for the vote
-                anonymizedVoterId: anonymizedVoterId, // Original anonymized ID from request
+                anonymizedVoterId: finalAnonymizedVoterId, // Original anonymized ID from request
                 electionId: newVote.election_id, // Internal election ID
                 selectedOption: newVote.selected_option_value,
                 castAtTimestamp: newVote.cast_at_timestamp,

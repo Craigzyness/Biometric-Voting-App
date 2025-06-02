@@ -125,8 +125,10 @@ Submits a vote for a specific election by a registered voter.
     ```json
     {
       "anonymizedVoterId": "string",
-      "electionId": "uuid_or_bigint_or_election_code_from_db", // Use election_code for user-friendliness if desired, then lookup internal ID
-      "selectedOption": "string" // The exact text of the chosen option, or its predefined ID/index
+      "electionId": "uuid_or_bigint_or_election_code_from_db", // Assuming direct UUID for electionId as implemented
+      "selectedOption": "string", // The exact text of the chosen option
+      "encryptedProof": "string (nullable, base64 encoded)",
+      "iv": "string (nullable, base64 encoded)"
     }
     ```
 *   **Success Response (201 Created):**
@@ -161,10 +163,12 @@ Submits a vote for a specific election by a registered voter.
         *   Insert a new record into the `Votes` table:
             *   `voter_id` = internal `voter_id`.
             *   `election_id` = internal `election_id`.
-            *   `selected_option_value` = `selectedOption` (or its hash/index as per schema decision).
+            *   `selected_option_value` = `selectedOption`.
+            *   `encrypted_proof` = `encryptedProof` from request (if provided, store as base64 text or after decoding if DB stores bytes).
+            *   `iv` = `iv` from request (if provided, store as base64 text or after decoding).
             *   `cast_at_timestamp` = current server timestamp.
-        *   **(Simulated Blockchain Interaction):** Log the vote details as per Action Item 3.7 (e.g., `console.log("SIMULATING BLOCKCHAIN RECORD: ...")`).
-        *   Return `201 Created` with details of the submitted vote.
+        *   **(Simulated Blockchain Interaction):** Log the vote details (excluding sensitive proof details from direct log output for security). Example: `console.log("SIMULATING BLOCKCHAIN RECORD: VoteID X for Election Y by Voter Z, Proof Stored")`.
+        *   Return `201 Created` with details of the submitted vote (again, excluding proof from response).
 
 ---
 

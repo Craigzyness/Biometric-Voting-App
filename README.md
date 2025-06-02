@@ -52,18 +52,21 @@ biometric-voting-app/
 ├── backend/                # API, business logic, DB models
 │   └── tests/              # Backend tests (e.g., Jest, Pytest)
 ├── app/                    # Android mobile client
+│   ├── build.gradle.kts    # Android app build configuration
+│   ├── proguard-rules.pro  # Proguard rules for release builds
 │   ├── src/main/           # Main application source code
 │   ├── src/test/           # Unit tests
 │   └── src/androidTest/    # Instrumented tests
 ├── docs/                   # Project documentation (architecture, design, guides)
 ├── gradle/                 # Gradle wrapper files & version catalog
+│   └── libs.versions.toml
 ├── .gitignore
-├── README.md               # This file: Project overview, setup
 ├── PROJECT_REMITS.md
 ├── CONTRIBUTING.md
 ├── SECURITY.md
 ├── LICENSE
-└── CODE_OF_CONDUCT.md
+├── CODE_OF_CONDUCT.md
+└── settings.gradle.kts
 ```
 
 ---
@@ -86,6 +89,8 @@ The backend is a Node.js application that uses Express.js and connects to a Post
 *   **Setup and Configuration:**
     *   Navigate to the `backend/` directory.
     *   Detailed instructions for installing dependencies (`npm install`), configuring database connection parameters (via environment variables like `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_PORT`), and running the server (`npm start`) are provided in `backend/README.md`.
+    *   For local development, you can create a `.env` file in the `backend/` directory to manage these variables (you might need to add the `dotenv` package: `npm install dotenv` and require it in `server.js`).
+    *   **Caution:** It is strongly recommended to change the default `DB_USER` and `DB_PASSWORD` for any non-local or shared development environment, as noted in `backend/README.md`.
     *   The server will attempt to create the necessary database tables if they don't exist on startup.
 
 ### 2. Android Application (`app/`)
@@ -116,8 +121,14 @@ The Android client is located in the `app/` directory.
 *   **`docs/backend_testing_strategy.md`**: Strategy and examples for testing the backend API.
 *   **`docs/security_requirements.md`**: Core security principles and requirements for the application.
 *   **`docs/mvp_features.md`**: Description of the Minimum Viable Product features.
+*   **`docs/mvp_security_review_notes.md`**: Notes from security review of MVP features.
 *   **`docs/ui_ux_flow.md`**: Describes the user interface screens and user experience flow.
+*   **`docs/user_stories.md`**: User stories for the application.
 *   **`docs/backend_design/`**: Contains detailed backend design documents including API specifications and database schema.
+*   **`docs/ai_coding_assistants_guide.md`**: Guide for working with AI coding assistants on this project.
+*   **`docs/backend_logic.md`**: Detailed explanation of backend business logic.
+*   **`docs/human_developer_engagement_plan.md`**: Plan for human developer engagement and collaboration with AI.
+*   **`docs/research_ai_platforms_strategy.md`**: Strategy for researching AI platforms and tools.
 
 ## Considerations & Best Practices
 
