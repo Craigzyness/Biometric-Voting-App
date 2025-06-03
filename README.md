@@ -140,6 +140,49 @@ The Android client is located in the `app/` directory.
 
 ---
 
+## Known Issues & Future Work
+
+This section outlines known limitations of the current MVP and potential areas for future development.
+
+### Known Issues/Limitations (MVP Scope)
+
+*   **Error Reporting (Android):** Firebase Crashlytics has been integrated for crash reporting. Its full efficacy across various scenarios will become clearer with more extensive real-world or simulated testing.
+*   **Scalability (Backend):** The current backend setup (`Node.js/Express` with a single PostgreSQL instance) is designed for MVP loads. For very large-scale elections (e.g., hundreds of thousands to millions of voters/votes), further database optimization (e.g., connection pool tuning, more advanced indexing strategies), potential use of read replicas, horizontal scaling of the application layer, and robust load balancing strategies would be necessary.
+*   **Offline Support (Android):** The Android app currently requires a stable network connection for all primary operations: registration, login (which re-verifies ID components implicitly via `AnonymizedIdGenerator` if it were to hit an API, though current login is local), fetching elections, and submitting votes. It does not support offline voting or extensive caching of election data.
+*   **Accessibility (Android):** While standard Jetpack Compose components are used (which have some built-in accessibility support), a dedicated accessibility review and testing phase (e.g., for improved TalkBack support across all custom UI interactions, comprehensive keyboard navigation, and ensuring high contrast ratios beyond defaults) has not been performed.
+*   **Biometric Security & Testing:**
+    *   The security of on-device ID generation (`AnonymizedIdGenerator.kt`) relies heavily on the secure implementation of `SecureSaltProvider.kt` and `StableIdentifierProvider.kt`, which are noted as needing expert cryptographic review for production deployment.
+    *   Testing biometric authentication features, particularly those involving `CryptoObject` operations (like vote proofing via `SecurityUtil.kt`), can be challenging to fully automate and verify on emulators and may require extensive testing on a diverse range of physical devices.
+*   **Database Schema Evolution:** The current `initializeDatabase()` function in `backend/server.js` creates tables and indexes `IF NOT EXISTS`. For future schema changes in production, a proper migration tool (e.g., `node-pg-migrate`, `Flyway`, `Liquibase`) would be essential instead of relying on conditional DDL in application startup.
+*   **Configuration Management (Backend):** While environment variables are used, a more robust configuration management solution might be needed for complex production deployments, including validation of environment variable settings at startup.
+
+### Future Work & Potential Enhancements
+
+*   **User Acceptance Testing (UAT):** Conduct thorough UAT with a diverse group of target users to gather feedback on usability, clarity, and overall experience.
+*   **CI/CD Pipeline:** Implement a Continuous Integration/Continuous Deployment (CI/CD) pipeline for automated builds, comprehensive testing (unit, integration, UI), and streamlined deployments for both Android and backend components.
+*   **Advanced Election Features:**
+    *   Display more detailed election information (e.g., candidate profiles, links to external resources, PDF attachments).
+    *   Support for different question types (e.g., ranked choice, multiple selections) or more complex voting mechanisms.
+    *   Real-time election results display (if applicable and designed to maintain anonymity).
+*   **Enhanced Security & Auditing:**
+    *   **Backend:** Implement Security Information and Event Management (SIEM) capabilities for monitoring and alerting on suspicious activities. Conduct professional, third-party penetration testing and security audits.
+    *   **Android & Backend:** Explore advanced cryptographic techniques for end-to-end verifiability of votes if required by specific election integrity standards.
+*   **Administrative Interface:** Develop a secure administrative web interface for:
+    *   Managing elections (creation, scheduling, status changes).
+    *   Monitoring system health and basic statistics (e.g., number of registered users, votes per election - while preserving anonymity).
+    *   Managing application content or configurations.
+*   **Comprehensive Internationalization (i18n) and Localization (l10n):**
+    *   Translate all user-facing strings in the Android app into multiple languages.
+    *   Ensure backend messages (if any become user-facing) are localizable.
+*   **Improved Test Coverage:**
+    *   Continuously expand unit, integration, and end-to-end (E2E) test suites for both Android and backend.
+    *   Develop more sophisticated UI tests for the Android app (e.g., using Espresso or UI Automator for complex flows).
+    *   Implement performance and load testing for the backend API.
+*   **Push Notifications (Android):** Notify users about upcoming elections or important announcements.
+*   **Data Backup and Recovery (Backend):** Implement and regularly test robust backup and disaster recovery plans for the PostgreSQL database.
+
+---
+
 ## License
 
 See [LICENSE](LICENSE) for details.

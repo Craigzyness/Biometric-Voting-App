@@ -2,6 +2,8 @@
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.kotlinAndroid)
+    id("com.google.gms.google-services") version "4.4.1" // Apply directly with version
+    id("com.google.firebase.crashlytics") version "2.9.9" // Apply directly with version
 }
 
 android {
@@ -93,6 +95,13 @@ dependencies {
     implementation(libs.androidx.security.crypto)
     implementation(libs.accompanist.permissions)
     implementation(libs.timber)
+
+    // Firebase - Bill of Materials (BOM)
+    implementation(platform("com.google.firebase:firebase-bom:32.8.0"))
+    // Firebase Crashlytics
+    implementation("com.google.firebase:firebase-crashlytics-ktx")
+    // Firebase Analytics (often recommended with Crashlytics)
+    implementation("com.google.firebase:firebase-analytics-ktx")
 
     // Network
     implementation("com.squareup.retrofit2:retrofit:2.9.0")

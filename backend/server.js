@@ -5,6 +5,7 @@ const helmet = require('helmet'); // Import helmet
 const morgan = require('morgan'); // Added for request logging
 const rateLimit = require('express-rate-limit'); // Added for rate limiting
 const winston = require('winston'); // Added for structured logging
+const DailyRotateFile = require('winston-daily-rotate-file'); // Added for file rotation
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -19,7 +20,31 @@ const logger = winston.createLogger({
     ),
     defaultMeta: { service: 'biometric-voting-backend' },
     transports: [
-        new winston.transports.Console()
+        new winston.transports.Console(), // Console transport configured below
+        new DailyRotateFile({
+            filename: 'logs/error-%DATE%.log',
+            level: 'error',
+            datePattern: 'YYYY-MM-DD',
+            zippedArchive: true,
+            maxSize: '20m',
+            maxFiles: '14d',
+            format: winston.format.combine(
+                winston.format.timestamp(), // File logs should always be structured JSON
+                winston.format.json()
+            )
+        }),
+        new DailyRotateFile({
+            filename: 'logs/combined-%DATE%.log',
+            level: process.env.NODE_ENV === 'development' ? 'debug' : 'info',
+            datePattern: 'YYYY-MM-DD',
+            zippedArchive: true,
+            maxSize: '20m',
+            maxFiles: '14d',
+            format: winston.format.combine(
+                winston.format.timestamp(), // File logs should always be structured JSON
+                winston.format.json()
+            )
+        })
     ]
 });
 

@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
+import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
 import com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator // Keep for direct call if needed, or remove if VM handles all
 import com.example.biometricvotingapp.ui.screens.registration.RegistrationUiState
 import com.example.biometricvotingapp.ui.screens.registration.RegistrationViewModel
@@ -164,6 +165,16 @@ fun RegistrationScreen(
             TextButton(onClick = onNavigateToLogin) {
                 Text("Already registered? Login here")
             }
+
+            Spacer(modifier = Modifier.height(32.dp)) // Add some space before the version text
+
+            Text(
+                text = "Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                style = MaterialTheme.typography.bodySmall, 
+                color = MaterialTheme.colorScheme.outline, 
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth()
+            )
         }
     }
 }

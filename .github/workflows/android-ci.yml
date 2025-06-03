@@ -1,0 +1,67 @@
+name: Android CI
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - 'settings.gradle.kts'
+      - 'gradle.properties' # If it exists and affects builds
+      - '.github/workflows/android-ci.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - '.github/workflows/android-ci.yml'
+
+jobs:
+  build_and_test_android:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17' # As typically required by modern Android Gradle Plugin
+        distribution: 'temurin' # Popular OpenJDK distribution
+        cache: 'gradle' # Enable caching for Gradle
+
+    # Optional: Set up Android SDK using a dedicated action if more control is needed
+    # For basic builds and unit tests, often JDK + Gradle setup is enough if AGP handles SDK download.
+    # However, to be explicit or for emulator tests later:
+    # - name: Set up Android SDK
+    #   uses: android-actions/setup-android@v3 # Using v3 as an example
+
+    - name: Grant execute permissions for gradlew
+      run: chmod +x ./gradlew
+
+    - name: Build debug APK
+      run: ./gradlew :app:assembleDebug
+
+    - name: Run unit tests
+      run: ./gradlew :app:testDebugUnitTest
+
+    - name: Run Android Lint
+      run: ./gradlew :app:lintDebug
+
+    # Optional: Upload Lint results
+    # - name: Upload Lint results
+    #   uses: actions/upload-artifact@v3
+    #   with:
+    #     name: lint-reports
+    #     path: app/build/reports/lint-results-debug.html # Path to lint report
+
+    # Optional: Upload Test results
+    # - name: Upload Test results
+    #   uses: actions/upload-artifact@v3
+    #   with:
+    #     name: unit-test-reports
+    #     path: app/build/reports/tests/testDebugUnitTest/ # Path to test reports
+```
