@@ -479,7 +479,7 @@ apiRouter.post('/submitVote', voteSubmissionLimiter, async (req, res) => {
                 logger.warn(`Double voting attempt by voter ${finalAnonymizedVoterId} (DB ID: ${internalVoterId}) for election ${finalElectionId}`);
                 return res.status(409).json({ error: "Already voted in this election." });
             }
-            throw dbErr; 
+            throw dbErr;
         }
     } catch (err) {
         logger.error('Error during /submitVote', { error: err.message, stack: err.stack, detail: err.detail, code: err.code });
@@ -501,7 +501,7 @@ app.get('/', (req, res) => {
 // Start server only if not in test environment
 if (process.env.NODE_ENV !== 'test') {
     app.listen(PORT, async () => {
-        await initializeDatabase(); 
+        await initializeDatabase();
         logger.info(`Backend server listening on port ${PORT}`);
         logger.info('Using PostgreSQL for data persistence.');
         logger.info(`Using database: ${DB_NAME}`);

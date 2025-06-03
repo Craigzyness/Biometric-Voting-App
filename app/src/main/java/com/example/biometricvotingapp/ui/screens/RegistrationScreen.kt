@@ -170,8 +170,8 @@ fun RegistrationScreen(
 
             Text(
                 text = "Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                style = MaterialTheme.typography.bodySmall, 
-                color = MaterialTheme.colorScheme.outline, 
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
             )

@@ -116,7 +116,7 @@ fun LoginScreen(
                 is LoginUiState.Error -> state.message
                 // Success messages are generally handled by navigation or a temporary positive indication.
                 // If LoginUiState had a Success state with a message, it could be displayed here.
-                else -> null 
+                else -> null
             }
 
             currentStatusMessage?.let { message ->

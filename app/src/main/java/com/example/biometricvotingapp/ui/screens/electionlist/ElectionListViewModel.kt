@@ -23,7 +23,7 @@ sealed interface ElectionListUiState {
 }
 
 class ElectionListViewModel(
-    private val application: Application, 
+    private val application: Application,
     private val votingRepository: VotingRepository,
     private val anonymizedVoterId: String? // Add anonymizedVoterId
 ) : ViewModel() {

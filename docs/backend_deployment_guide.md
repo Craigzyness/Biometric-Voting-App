@@ -62,7 +62,7 @@ The following environment variables need to be set in your deployment environmen
 
 2.  **Navigate to Backend Directory:**
     ```bash
-    cd backend 
+    cd backend
     ```
     (If you cloned directly into a directory named `backend`, you might already be there).
 
@@ -98,7 +98,7 @@ The following environment variables need to be set in your deployment environmen
 6.  **Running the Application:**
     *   You can start the application using:
         ```bash
-        npm start 
+        npm start
         ```
         (This typically executes `node server.js` as defined in `package.json`).
     *   **Production Recommendation:** Use a process manager like PM2, systemd, or run the application within a Docker container managed by an orchestrator. This ensures the application restarts automatically if it crashes, manages logs, and can help with scaling.

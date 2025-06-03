@@ -18,7 +18,7 @@ class MainApplication : Application() {
         // Initialize Firebase Crashlytics
         // Disable Crashlytics collection for debug builds to prevent noise during development
         FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(!BuildConfig.DEBUG)
-        
+
         if (BuildConfig.DEBUG) {
             Timber.d("MainApplication onCreate: Crashlytics collection enabled: ${!BuildConfig.DEBUG}")
         }

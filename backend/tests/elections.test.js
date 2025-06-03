@@ -181,7 +181,7 @@ describe('/api/v1/elections', () => {
             election1Id = (await dbPool.query(`INSERT INTO "Elections" (election_code, title, description, options, start_timestamp, end_timestamp, status) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, Object.values(createActiveElectionPayload('E01')))).rows[0].id;
             election2Id = (await dbPool.query(`INSERT INTO "Elections" (election_code, title, description, options, start_timestamp, end_timestamp, status) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, Object.values(createActiveElectionPayload('E02')))).rows[0].id;
             election3Id = (await dbPool.query(`INSERT INTO "Elections" (election_code, title, description, options, start_timestamp, end_timestamp, status) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, Object.values(createActiveElectionPayload('E03')))).rows[0].id;
-        
+
             // Seed votes: voter1 voted in E01 and E03
             await seedVote(voter1.id, election1Id);
             await seedVote(voter1.id, election3Id);
@@ -195,7 +195,7 @@ describe('/api/v1/elections', () => {
                 expect(election.hasVoted).toBe(false);
             });
         });
-        
+
         it('should return 400 if provided anonymizedVoterId is invalid format', async () => {
             const response = await request(app).get('/api/v1/elections?anonymizedVoterId=invalid-id-format');
             expect(response.statusCode).toBe(400);
@@ -261,7 +261,7 @@ describe('/api/v1/elections', () => {
             expect(foundElection.options).toEqual([]);
             expect(foundElection.hasVoted).toBe(false); // Assuming no voterId provided
         });
-        
+
         it('should return correct hasVoted status for an ineligible voter', async () => {
             // Seed an ineligible voter
             const ineligibleVoterData = await seedVoter('ineligible_voter_sha256_hex_003');
@@ -273,9 +273,9 @@ describe('/api/v1/elections', () => {
             const response = await request(app).get(`/api/v1/elections?anonymizedVoterId=${ineligibleVoterData.anonymized_voter_id}`);
             expect(response.statusCode).toBe(200);
             const electionMap = new Map(response.body.elections.map(e => [e.id, e]));
-            
+
             // hasVoted should still reflect past votes even if currently ineligible
-            expect(electionMap.get(election1Id).hasVoted).toBe(true); 
+            expect(electionMap.get(election1Id).hasVoted).toBe(true);
             expect(electionMap.get(election2Id).hasVoted).toBe(false);
         });
 

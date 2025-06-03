@@ -51,8 +51,8 @@ class ElectionListViewModelTest {
         // ViewModel calls loadElections in init block.
         // Here, we verify the state after init has completed its work.
         // The createViewModel helper already sets up a default coEvery for getElections.
-        viewModel = createViewModel(null) 
-        advanceUntilIdle() 
+        viewModel = createViewModel(null)
+        advanceUntilIdle()
 
         // If getElections returns emptyList by default in createViewModel's coEvery, then Empty state is expected.
         assertEquals(ElectionListUiState.Empty, viewModel.uiState.value)
@@ -61,7 +61,7 @@ class ElectionListViewModelTest {
     @Test
     fun `loadElections with null anonymizedVoterId success with data maps hasVoted from DTO`() = runTest(testDispatcher) {
         val electionDtos = listOf(
-            ElectionDto("id1", "E1", "Title1", "Desc1", listOf("A"), "s1", "e1", "ACTIVE", hasVoted = true), 
+            ElectionDto("id1", "E1", "Title1", "Desc1", listOf("A"), "s1", "e1", "ACTIVE", hasVoted = true),
             ElectionDto("id2", "E2", "Title2", "Desc2", listOf("B"), "s2", "e2", "ACTIVE", hasVoted = null) // null hasVoted from backend
         )
         coEvery { mockVotingRepository.getElections(null) } returns Result.success(electionDtos)
@@ -77,14 +77,14 @@ class ElectionListViewModelTest {
         assertEquals(true, elections.find { it.id == "id1" }?.hasVoted) // True from DTO becomes true
         assertEquals(false, elections.find { it.id == "id2" }?.hasVoted) // Null from DTO becomes false
     }
-    
+
     @Test
     fun `loadElections with valid anonymizedVoterId success maps hasVoted correctly from DTO`() = runTest(testDispatcher) {
         val testVoterId = "voter-test-id"
         val electionDtos = listOf(
             ElectionDto("id1", "E1", "Title1", "Desc1", listOf("A"), "s1", "e1", "ACTIVE", hasVoted = true),
             ElectionDto("id2", "E2", "Title2", "Desc2", listOf("B"), "s2", "e2", "ACTIVE", hasVoted = false),
-            ElectionDto("id3", "E3", "Title3", "Desc3", listOf("C"), "s3", "e3", "ACTIVE", null) 
+            ElectionDto("id3", "E3", "Title3", "Desc3", listOf("C"), "s3", "e3", "ACTIVE", null)
         )
         coEvery { mockVotingRepository.getElections(testVoterId) } returns Result.success(electionDtos)
 

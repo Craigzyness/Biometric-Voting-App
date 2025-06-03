@@ -134,7 +134,7 @@ describe('/api/v1/register', () => {
         let response = await request(app)
             .post('/api/v1/register')
             .send({ anonymizedVoterId: idMixedCase });
-        
+
         expect(response.statusCode).toBe(201);
         expect(response.body.voter.anonymizedVoterId).toBe(idLowerCase); // Should be stored as lowercase
 

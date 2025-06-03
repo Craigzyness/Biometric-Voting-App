@@ -337,7 +337,7 @@ describe('/api/v1/submitVote', () => {
             expect(response.statusCode).toBe(400);
             expect(response.body.error).toContain('iv must be a valid Base64 encoded string.');
         });
-        
+
         it('should return 400 if encryptedProof is provided as non-empty string but iv is missing or empty', async () => {
             const response = await request(app).post('/api/v1/submitVote').send({
                 anonymizedVoterId: voter.anonymized_voter_id, electionId, selectedOption: 'Option A',
@@ -345,7 +345,7 @@ describe('/api/v1/submitVote', () => {
             });
             expect(response.statusCode).toBe(400);
             expect(response.body.error).toContain('encryptedProof and iv must be provided together');
-            
+
             const response2 = await request(app).post('/api/v1/submitVote').send({
                 anonymizedVoterId: voter.anonymized_voter_id, electionId, selectedOption: 'Option A',
                 encryptedProof: 'validBase64==', iv: '   ' // iv is empty after trim
@@ -407,7 +407,7 @@ describe('/api/v1/submitVote', () => {
 
         expect(response.statusCode).toBe(201);
         expect(response.body).toHaveProperty('message', 'Vote submitted successfully.');
-        
+
         // Verify in DB that the vote is associated with the normalized (lowercase) voter ID's record
         const dbResult = await dbPool.query(
             'SELECT v.* FROM "Votes" vt JOIN "Voters" v ON vt.voter_id = v.id WHERE vt.election_id = $1 AND v.anonymized_voter_id = $2',
@@ -523,7 +523,7 @@ describe('/api/v1/submitVote', () => {
             // const responseAfterEnd = await request(app).post('/api/v1/submitVote').send(votePayload);
             // expect(responseAfterEnd.statusCode).toBe(403);
         });
-        
+
         it('should return 403 if current time is exactly end_timestamp or just after', async () => {
             const now = Date.now();
             const electionId = await seedElection(dbPool, {
@@ -534,7 +534,7 @@ describe('/api/v1/submitVote', () => {
                 endTimestamp: new Date(now - 1000).toISOString(), // Ended 1 second ago (to ensure it's past)
                 status: 'ACTIVE'
             });
-        
+
             const votePayload = {
                 anonymizedVoterId: voter.anonymized_voter_id,
                 electionId: electionId,

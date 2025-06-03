@@ -25,7 +25,20 @@ This workflow handles the Node.js backend application.
 2.  **Set up Node.js:** Configures the environment with specified Node.js versions (currently tests on 18.x and 20.x). It also caches npm dependencies for faster builds.
 3.  **Install Dependencies:** Runs `npm ci` in the `backend/` directory to install dependencies reliably.
 4.  **Run Tests:** Executes `npm test` in the `backend/` directory.
-    *   **Environment Variables for Tests:** The workflow sets `NODE_ENV: test`. For tests requiring a database, it includes placeholder environment variables (`DB_HOST`, `DB_USER`, etc.). In a full production CI setup, these would be securely provided (e.g., via GitHub secrets) to connect to a dedicated test database instance or a service container (like PostgreSQL running in Docker).
+    *   **Database Service for Testing:** To ensure reliable testing of database interactions, this workflow now includes a **PostgreSQL service container**.
+        *   **Image:** `postgres:15-alpine` is used.
+        *   **Service Configuration:** The service is automatically configured with the following environment variables:
+            *   `POSTGRES_USER: testuser`
+            *   `POSTGRES_PASSWORD: testpassword`
+            *   `POSTGRES_DB: biometric_voting_app_test_db` (This database is created and ready for use by the tests).
+        *   **Health Check:** A health check (`pg_isready`) is configured for the service to ensure PostgreSQL is operational before tests proceed. An additional short `sleep` step is also included in the workflow for extra readiness assurance.
+    *   **Application Environment Variables for Tests:** The test execution step sets necessary environment variables for the Node.js application:
+        *   `NODE_ENV: test`
+        *   `DB_HOST: localhost` (as services are mapped to localhost on the GitHub Actions runner).
+        *   `DB_PORT: 5432` (matching the service's exposed port).
+        *   `DB_USER: testuser` (matching `POSTGRES_USER` of the service).
+        *   `DB_PASSWORD: testpassword` (matching `POSTGRES_PASSWORD` of the service).
+        *   `DB_TEST_NAME: biometric_voting_app_test_db` (ensuring the application connects to the database created by the service).
 
 ## Android CI Workflow (`.github/workflows/android-ci.yml`)
 
@@ -70,7 +83,8 @@ While the current setup provides essential CI capabilities (automated testing an
 *   **Code Quality Gates:**
     *   Integrate tools like SonarQube for more in-depth static analysis and code quality tracking.
 *   **Service Containers (for Backend Testing):**
-    *   For more reliable backend testing, especially for database interactions, use service containers (e.g., a PostgreSQL Docker container) directly within the GitHub Actions workflow. This ensures a clean and consistent test database environment for each run. The `DB_HOST` would then be `localhost` or the service name defined in the workflow.
+    *   A PostgreSQL service container **has been implemented** in the backend CI workflow (`.github/workflows/backend-ci.yml`) to provide a dedicated database for running integration tests. This ensures a clean, consistent, and ephemeral database environment for each CI run.
+    *   This approach (using service containers) is highly recommended for any backend tests requiring external services (databases, message queues, etc.) to improve reliability and avoid dependency on external, persistent test environments.
 
 This guide provides a starting point for understanding and expanding the CI/CD capabilities of the project.
 ```

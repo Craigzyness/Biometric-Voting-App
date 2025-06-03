@@ -84,7 +84,7 @@ class LoginViewModel(
         if (BuildConfig.DEBUG) Log.e("LoginViewModel", "Biometric Auth Error: $errorCode - $errString")
         _uiState.value = LoginUiState.Error("Login Error: $errString")
     }
-    
+
     fun onBiometricAuthenticationError(message: String) { // Overload for non-API errors
         if (BuildConfig.DEBUG) Log.e("LoginViewModel", "Biometric Auth Error: $message")
         _uiState.value = LoginUiState.Error(message)

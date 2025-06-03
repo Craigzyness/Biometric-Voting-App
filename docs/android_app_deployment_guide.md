@@ -37,7 +37,7 @@ To distribute your app, especially on the Google Play Store, the release build m
 // In app/build.gradle.kts
 signingConfigs {
     create("releasePlaceholder") {
-        storeFile = file("placeholder.keystore") 
+        storeFile = file("placeholder.keystore")
         storePassword = "placeholder_password"
         keyAlias = "placeholder_alias"
         keyPassword = "placeholder_key_password"
@@ -72,7 +72,7 @@ buildTypes {
         ```
         # .gitignore
         keystore.properties
-        *.jks 
+        *.jks
         ```
 
 4.  **Add Credentials to `keystore.properties`:**

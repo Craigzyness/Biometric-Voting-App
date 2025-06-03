@@ -109,7 +109,7 @@ class LoginViewModelTest {
         assertTrue("UI state should be Error, was $finalState", finalState is LoginUiState.Error)
         assertEquals("Login Error: $errString", (finalState as LoginUiState.Error).message)
     }
-    
+
     @Test
     fun `onBiometricAuthenticationError (with string message) sets Error state`() {
         val errMessage = "A custom error message for biometrics"
