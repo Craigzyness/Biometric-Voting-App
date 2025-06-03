@@ -55,7 +55,65 @@ This workflow handles the Android application.
 4.  **Build Debug APK:** Runs `./gradlew :app:assembleDebug` to compile the debug version of the app.
 5.  **Run Unit Tests:** Executes `./gradlew :app:testDebugUnitTest`.
 6.  **Run Android Lint:** Runs `./gradlew :app:lintDebug` to check for code quality issues.
-7.  **Artifacts (Optional):** The workflow includes commented-out steps for uploading lint and test reports as build artifacts, which can be useful for debugging CI failures.
+7.  **Artifacts (Optional):** The workflow includes commented-out steps for uploading lint and test reports.
+
+### Handling Release Builds and Signing
+
+For distributing the Android application (e.g., via the Google Play Store), a signed release build (typically an AAB - Android App Bundle) is required. This involves signing the app with a private release key.
+
+**Secure Key Management:**
+The private key (usually in a `.jks` or `.keystore` file) and its associated passwords must be kept secure. They should **not** be committed to the version control system.
+
+**Recommended Approach using GitHub Actions Secrets:**
+The CI workflow (`.github/workflows/android-ci.yml`) is set up to handle release builds and signing using GitHub Actions secrets. Here's how it's conceptually designed:
+
+1.  **Keystore Preparation:**
+    *   Your Java Keystore (`.jks`) file needs to be encoded into a Base64 string.
+    *   Example command (Linux/macOS): `base64 -w0 your-release-key.jks > your-release-key.jks.b64`
+    *   The content of this `.b64` file is what will be stored as a secret.
+
+2.  **Store Credentials as GitHub Secrets:**
+    Navigate to your GitHub repository's `Settings > Secrets and variables > Actions` and add the following secrets:
+    *   `ANDROID_RELEASE_KEYSTORE_B64`: The Base64 encoded string of your `.jks` keystore file.
+    *   `ANDROID_RELEASE_STORE_PASSWORD`: The password for the keystore.
+    *   `ANDROID_RELEASE_KEY_ALIAS`: The alias for your release key within the keystore.
+    *   `ANDROID_RELEASE_KEY_PASSWORD`: The password for the key alias.
+
+3.  **Workflow Steps for Signing:**
+    The `android-ci.yml` workflow includes conditional steps that typically run on pushes to specific branches (e.g., `main` or `release/*`). These steps perform the following:
+    *   **Decode Keystore:**
+        *   The Base64 encoded keystore string (`secrets.ANDROID_RELEASE_KEYSTORE_B64`) is retrieved.
+        *   A script within the workflow decodes this string back into a `.jks` file (e.g., `app/release.keystore.jks`) on the CI runner.
+        *   A check is included to gracefully skip these release steps if the `ANDROID_RELEASE_KEYSTORE_B64` secret is not found (e.g., for PRs from forks).
+        ```yaml
+        # Conceptual snippet from the workflow:
+        # - name: Decode Keystore and Create keystore.properties (Release)
+        #   env:
+        #     ANDROID_RELEASE_KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
+        #     # ... other secrets ...
+        #   run: |
+        #     echo $ANDROID_RELEASE_KEYSTORE_B64 | base64 --decode > app/release.keystore.jks
+        ```
+    *   **Create `keystore.properties`:**
+        *   The workflow dynamically creates the `app/keystore.properties` file on the CI runner using the other secrets (`ANDROID_RELEASE_STORE_PASSWORD`, `ANDROID_RELEASE_KEY_ALIAS`, `ANDROID_RELEASE_KEY_PASSWORD`) to populate it. This file is configured in `app/build.gradle.kts` to provide signing information to Gradle.
+        ```yaml
+        # Conceptual snippet from the workflow:
+        #     echo "storeFile=release.keystore.jks" > app/keystore.properties
+        #     echo "storePassword=$ANDROID_RELEASE_STORE_PASSWORD" >> app/keystore.properties
+        #     # ... and so on for keyAlias and keyPassword
+        ```
+        *   The `app/keystore.properties` file itself should be listed in the project's `.gitignore` file (and it is).
+    *   **Build Release AAB:**
+        *   The command `./gradlew :app:bundleRelease` is run to build the signed Android App Bundle.
+    *   **Upload AAB Artifact:**
+        *   The generated AAB file (e.g., `app/build/outputs/bundle/release/app-release.aab`) is uploaded as a build artifact for download or further deployment steps.
+
+**Security Emphasis:**
+*   These GitHub Actions secrets must be configured in the repository settings by someone with administrative privileges.
+*   They are encrypted by GitHub and only exposed to the workflow run.
+*   Never hardcode your release keystore details or passwords directly in the workflow file or any other version-controlled file.
+
+This setup allows for automated, secure signing of release builds within the CI environment.
 
 ## General CI/CD Considerations & Future Enhancements
 

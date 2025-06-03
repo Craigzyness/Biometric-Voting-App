@@ -51,17 +51,52 @@ jobs:
     - name: Run Android Lint
       run: ./gradlew :app:lintDebug
 
-    # Optional: Upload Lint results
+    # --- Release Build Steps (Conceptual: Requires Secrets) ---
+    - name: Decode Keystore and Create keystore.properties (Release)
+      if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) # Example: Run only on push to main or release branches
+      env:
+        ANDROID_RELEASE_KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
+        ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+        ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+        ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+      run: |
+        echo "Simulating Keystore setup..."
+        if [ -z "$ANDROID_RELEASE_KEYSTORE_B64" ]; then
+          echo "ANDROID_RELEASE_KEYSTORE_B64 secret not found. Skipping release build steps."
+          # exit 1 # Or just skip if this is acceptable for some branches
+        else
+          echo "Decoding Keystore file to app/release.keystore.jks"
+          echo $ANDROID_RELEASE_KEYSTORE_B64 | base64 --decode > app/release.keystore.jks
+          echo "Creating keystore.properties"
+          echo "storeFile=release.keystore.jks" > app/keystore.properties
+          echo "storePassword=$ANDROID_RELEASE_STORE_PASSWORD" >> app/keystore.properties
+          echo "keyAlias=$ANDROID_RELEASE_KEY_ALIAS" >> app/keystore.properties
+          echo "keyPassword=$ANDROID_RELEASE_KEY_PASSWORD" >> app/keystore.properties
+          echo "Keystore and keystore.properties configured for release."
+        fi
+
+    - name: Build Release AAB
+      if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && env.ANDROID_RELEASE_KEYSTORE_B64 != '' # Run if keystore was processed
+      run: ./gradlew :app:bundleRelease
+
+    - name: Upload Release AAB
+      if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && env.ANDROID_RELEASE_KEYSTORE_B64 != '' # Run if keystore was processed
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-aab
+        path: app/build/outputs/bundle/release/app-release.aab
+        if-no-files-found: error # Fails the step if the AAB is not found
+
+    # --- Optional: Upload other reports ---
     # - name: Upload Lint results
-    #   uses: actions/upload-artifact@v3
+    #   uses: actions/upload-artifact@v4
     #   with:
     #     name: lint-reports
-    #     path: app/build/reports/lint-results-debug.html # Path to lint report
+    #     path: app/build/reports/lint-results-debug.html
 
-    # Optional: Upload Test results
     # - name: Upload Test results
-    #   uses: actions/upload-artifact@v3
+    #   uses: actions/upload-artifact@v4
     #   with:
     #     name: unit-test-reports
-    #     path: app/build/reports/tests/testDebugUnitTest/ # Path to test reports
+    #     path: app/build/reports/tests/testDebugUnitTest/
 ```
