@@ -15,6 +15,9 @@ class MainApplication : Application() {
         // For release builds, you might plant a different tree that logs to Crashlytics or does nothing.
         // Timber.plant(ReleaseTree()) // Example for release
 
+        // IMPORTANT FOR RELEASE: Ensure the correct google-services.json for the
+        // production Firebase project is in place before building a release.
+        // Different Firebase projects might be used for debug vs. release builds.
         // Initialize Firebase Crashlytics
         // Disable Crashlytics collection for debug builds to prevent noise during development
         FirebaseCrashlytics.getInstance().setCrashlyticsCollectionEnabled(!BuildConfig.DEBUG)

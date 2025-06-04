@@ -164,15 +164,14 @@ Before publishing your application, perform these critical checks:
     *   Review and ensure `app/proguard-rules.pro` is comprehensive enough to prevent crashes due to over-aggressive code removal (e.g., for classes used via reflection, DTOs for GSON/Retrofit) while maximizing obfuscation.
     *   **Thoroughly test the generated release build** (APK or AAB installed on a device) to ensure all functionality works as expected.
 
-*   **Disable Debugging:**
+*   **Disable Debugging & Review Logging:**
     *   The `android:debuggable` attribute in `AndroidManifest.xml` is typically handled by the build system (set to `false` for release builds). Verify this is the case.
-    *   Remove or guard all development logging calls (e.g., `Log.d`, `Log.i`). Using `if (BuildConfig.DEBUG) { Log.d(...) }` is a common practice, and R8 will remove these blocks in release builds. Timber library, if configured with a release tree that does no logging, also handles this.
+    *   Perform a final review of all `android.util.Log` calls throughout the codebase. Ensure all verbose logging (`Log.d`, `Log.i`, `Log.v`) is strictly conditional, e.g., wrapped in `if (BuildConfig.DEBUG) { ... }`. Error/Warning logs (`Log.e`, `Log.w`) should not log sensitive user data if they are to remain in release builds. (Note: If using a logging library like Timber, ensure it's configured to plant a release tree that doesn't output debug/info logs, as done in `MainApplication.kt`).
 
 *   **Network Security:**
     *   **Backend MUST use HTTPS.**
-    *   In `app/src/main/AndroidManifest.xml`, the `android:usesCleartextTraffic="true"` attribute is present for development convenience (e.g., for HTTP communication with `10.0.2.2`).
-    *   **For release builds, this MUST be changed to `android:usesCleartextTraffic="false"`.**
-    *   If specific domains require cleartext (not recommended for production backends), use a Network Security Configuration file to allow cleartext only for those specific domains. For this app, the production backend should always be HTTPS.
+    *   Verify that the Network Security Configuration (e.g., `res/xml/network_security_config.xml`) is active and correctly configured to enforce HTTPS (i.e., `cleartextTrafficPermitted="false"` in the default/base configuration) for all production network traffic. Confirm it's referenced in `AndroidManifest.xml` via the `android:networkSecurityConfig` attribute in the `<application>` tag.
+    *   The `android:usesCleartextTraffic="true"` attribute in `AndroidManifest.xml` is primarily for local development convenience (especially for API levels below 24 where Network Security Configuration might not be fully respected or if not configured). For API 24+, the Network Security Configuration takes precedence. For release, effective network policy must be HTTPS-only.
 
 *   **API Keys & Secrets:**
     *   Confirm that no API keys, credentials, or other secrets are hardcoded in the application's code or resource files. Manage these via secure build configurations or by fetching them from a secure server if necessary (though client-side secrets are generally discouraged).
@@ -181,7 +180,10 @@ Before publishing your application, perform these critical checks:
     *   Review permissions in `AndroidManifest.xml` (`USE_BIOMETRIC`, `INTERNET`) to ensure they are still the minimum necessary for the app's functionality.
 
 *   **App Versioning:**
-    *   Before each release, update `versionCode` (increment by at least 1) and `versionName` (e.g., "1.0.1") in `app/build.gradle.kts`. This is crucial for app updates on Google Play.
+    *   Before each release, ensure `versionCode` in `app/build.gradle.kts` is incremented (must be a unique integer higher than previous versions on Google Play). Update `versionName` to reflect the new version (e.g., "1.0.0", "1.0.1", "1.1.0").
+
+*   **Firebase Configuration:**
+    *   Ensure the correct `google-services.json` file, corresponding to your production Firebase project (if different from debug/staging), is included in the `app/` directory before building the release version. This is crucial for services like Crashlytics and Analytics to report to the correct project. A reminder comment for this is present in `MainApplication.kt`.
 
 ## 6. Distribution
 
