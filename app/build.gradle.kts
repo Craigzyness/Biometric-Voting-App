@@ -69,12 +69,26 @@ android {
             )
             // Assign the 'release' signing configuration to the release build type.
             signingConfig = signingConfigs.getByName("release")
+            // TODO: Replace with your actual production API base URL
+            buildConfigField("String", "API_BASE_URL", "\"https://your.production.api/api/v1/\"")
+            // Coverage usually not enabled for release builds
+            // enableUnitTestCoverage = false
+            // enableAndroidTestCoverage = false
         }
         debug {
             isMinifyEnabled = false
             // Debug builds are typically signed with a default debug keystore automatically.
+            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:3000/api/v1/\"")
+            // Enable code coverage for debug builds
+            enableUnitTestCoverage = true
+            enableAndroidTestCoverage = true
         }
     }
+
+    testCoverage {
+        jacocoVersion = "0.8.11" // Use a recent stable JaCoCo version
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
@@ -84,6 +98,7 @@ android {
     }
     buildFeatures {
         compose = true // Enable Jetpack Compose
+        buildConfig = true // Ensure BuildConfig is generated (usually true by default for app modules)
     }
     composeOptions {
         kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
@@ -123,10 +138,11 @@ dependencies {
     implementation("com.google.firebase:firebase-analytics-ktx")
 
     // Network
+    // TODO: After updating libraries, ensure app compiles, tests pass, and perform manual testing.
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0") // Gson converter
-    implementation("com.squareup.okhttp3:okhttp:4.9.3") // OkHttp (use a version compatible with Retrofit 2.9.0)
-    implementation("com.google.code.gson:gson:2.8.9") // Gson library itself
+    implementation("com.squareup.okhttp3:okhttp:4.12.0") // Updated OkHttp
+    implementation("com.google.code.gson:gson:2.10.1") // Updated Gson library
 
     // Testing
     testImplementation(libs.junit)

@@ -1,5 +1,6 @@
 package com.example.biometricvotingapp.data.network
 
+import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
 import com.example.biometricvotingapp.data.network.dto.ElectionListResponse
 import com.example.biometricvotingapp.data.network.dto.RegistrationRequest
 import com.example.biometricvotingapp.data.network.dto.RegistrationResponse
@@ -14,6 +15,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.Query // Added missing import for @Query
 
 interface ApiService {
 
@@ -27,8 +29,8 @@ interface ApiService {
     suspend fun submitVote(@Body request: VoteRequest): Response<VoteResponse>
 
     companion object {
-        // Base URL for the Android emulator to connect to the host machine's localhost, now with /api/v1
-        private const val BASE_URL = "http://10.0.2.2:3000/api/v1/"
+        // Base URL now sourced from BuildConfig
+        private val BASE_URL = BuildConfig.API_BASE_URL
 
         // Lazy-initialized Retrofit instance
         val instance: ApiService by lazy {

@@ -42,8 +42,24 @@ jobs:
     - name: Run unit tests
       run: ./gradlew :app:testDebugUnitTest
 
+    - name: Upload Unit Test Results
+      if: always() # Run this even if tests fail, to get the reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-unit-test-results
+        path: app/build/test-results/testDebugUnitTest/
+        if-no-files-found: warn # Don't fail if somehow no results
+
     - name: Run Android Lint
       run: ./gradlew :app:lintDebug
+      # Optional: Upload Lint results (uncomment and adjust if needed)
+      # - name: Upload Lint results
+      #   if: always()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: lint-reports
+      #     path: app/build/reports/lint-results-debug.html # Or other formats like XML
+      #     if-no-files-found: warn
 
     - name: Run Instrumented Tests (connectedAndroidTest)
       uses: reactivecircus/android-emulator-runner@v2
@@ -53,6 +69,25 @@ jobs:
         # Optional: You can specify other emulator options like target, arch, etc.
         # target: "google_apis" # Example: "default" or "google_apis" or "aosp_atd"
         # arch: "x86_64" # Example
+
+    - name: Upload Instrumented Test Results
+      if: always() # Run this step even if previous steps fail, to upload results
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-instrumented-test-results
+        path: app/build/outputs/androidTest-results/connected/
+        if-no-files-found: warn
+
+    - name: Generate JaCoCo Code Coverage Report
+      run: ./gradlew :app:createDebugCoverageReport # This task is enabled by enableUnitTestCoverage and enableAndroidTestCoverage
+
+    - name: Upload Code Coverage Report (HTML)
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: android-code-coverage-report-html
+        path: app/build/reports/coverage/debug/ # Standard path for HTML reports from createDebugCoverageReport
+        if-no-files-found: warn
 
     # --- Release Build Steps (Conceptual: Requires Secrets) ---
     - name: Decode Keystore and Create keystore.properties (Release)
@@ -89,23 +124,3 @@ jobs:
         name: release-aab
         path: app/build/outputs/bundle/release/app-release.aab
         if-no-files-found: error # Fails the step if the AAB is not found
-
-    # --- Optional: Upload other reports ---
-    # - name: Upload Lint results
-    #   uses: actions/upload-artifact@v4
-    #   with:
-    #     name: lint-reports
-    #     path: app/build/reports/lint-results-debug.html
-
-    # - name: Upload Test results
-    #   uses: actions/upload-artifact@v4
-    #   with:
-    #     name: unit-test-reports
-    #     path: app/build/reports/tests/testDebugUnitTest/
-    # - name: Upload Instrumented Test results
-    #   if: always() # Run this step even if previous steps fail, to upload results
-    #   uses: actions/upload-artifact@v4
-    #   with:
-    #     name: instrumented-test-reports
-    #     path: app/build/reports/androidTests/connected/
-    #     if-no-files-found: ignore
