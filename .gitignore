@@ -1,3 +1,4 @@
+backend-db-frontend-setup
 # Python
 __pycache__/
 *.py[cod]
@@ -7,10 +8,12 @@ __pycache__/
 venv/
 env/
 
+Biometric-Voting-App
 # Node.js
 node_modules/
 npm-debug.log
 yarn-error.log
+backend-db-frontend-setup
 dist/
 .DS_Store
 
@@ -19,3 +22,47 @@ dist/
 *.swo
 .idea/
 .vscode/
+
+package-lock.json
+yarn.lock
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-freeze.txt
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Test & Coverage Artifacts
+coverage/
+.coverage
+*.lcov
+nosetests.xml
+coverage.xml
+
+# IDE & Editor Folders
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Build outputs
+build/
+dist/
+*.gem
+*.egg
+*.whl
+Biometric-Voting-App
