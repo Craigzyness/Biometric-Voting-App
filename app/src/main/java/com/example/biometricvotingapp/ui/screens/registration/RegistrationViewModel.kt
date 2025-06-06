@@ -1,15 +1,15 @@
 package com.example.biometricvotingapp.ui.screens.registration
 
 import android.app.Application
-import android.app.Application
 import android.util.Log
 import androidx.biometric.BiometricPrompt // For error codes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
-import com.example.biometricvotingapp.data.network.ApiService
+// Removed ApiService import as it's not directly used
 import com.example.biometricvotingapp.data.repository.VotingRepository
 import com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator
+import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper // Import the new mapper
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -78,26 +78,17 @@ class RegistrationViewModel(
     }
 
     fun onBiometricAuthenticationError(errorCode: Int, errString: CharSequence) {
-        val specificMessage = when (errorCode) {
-            BiometricPrompt.ERROR_HW_UNAVAILABLE, BiometricPrompt.ERROR_HW_NOT_PRESENT ->
-                "Biometric hardware not available or not detected. Please check your device."
-            BiometricPrompt.ERROR_NO_BIOMETRICS ->
-                "No biometrics enrolled. Please add a fingerprint in your device settings."
-            BiometricPrompt.ERROR_LOCKOUT ->
-                "Too many attempts. Biometric authentication is temporarily locked."
-            BiometricPrompt.ERROR_LOCKOUT_PERMANENT ->
-                "Too many attempts. Biometric authentication is permanently locked. You may need to reconfigure device security."
-            BiometricPrompt.ERROR_USER_CANCELED, BiometricPrompt.ERROR_NEGATIVE_BUTTON ->
-                "Biometric authentication cancelled."
-            // Consider BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL if device credential fallback is ever enabled.
-            else -> "Biometric authentication error: $errString (Code: $errorCode)"
-        }
-        if (BuildConfig.DEBUG) Log.e("RegistrationViewModel", "Biometric Auth Error $errorCode: $errString. Mapped to: $specificMessage")
-        _uiState.value = RegistrationUiState.Error(specificMessage)
+        // Use the centralized BiometricErrorMapper
+        val errorMessage = BiometricErrorMapper.mapBiometricErrorCodeToString(errorCode, errString)
+        if (BuildConfig.DEBUG) Log.e("RegistrationViewModel", "Biometric Auth Error $errorCode: $errString. Mapped to: $errorMessage")
+        _uiState.value = RegistrationUiState.Error(errorMessage)
     }
 
     fun onBiometricAuthenticationFailed() {
-        val errorMessage = "Biometric authentication failed. Fingerprint not recognized." // Made slightly more user-friendly
+        // This is a distinct callback from onAuthenticationError.
+        // BiometricPrompt.ERROR_NEGATIVE_BUTTON or ERROR_USER_CANCELED might lead to onAuthenticationError.
+        // onAuthenticationFailed() means the biometric was valid but not recognized.
+        val errorMessage = "Biometric authentication failed. Fingerprint not recognized."
         if (BuildConfig.DEBUG) Log.w("RegistrationViewModel", errorMessage)
         _uiState.value = RegistrationUiState.Error(errorMessage)
     }

@@ -8,8 +8,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.biometricvotingapp.BuildConfig
 import com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator
-import com.example.biometricvotingapp.utils.BiometricAuthManager // Assuming this is in the main utils
-import com.example.biometricvotingapp.utils.BiometricAvailabilityStatus
+import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper // Import the new mapper
+// Removed BiometricAuthManager and BiometricAvailabilityStatus imports as they are not directly used in this VM
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -34,8 +34,6 @@ sealed class LoginViewEvent {
 class LoginViewModel(
     private val application: Application,
     private val anonymizedIdGenerator: AnonymizedIdGenerator
-    // private val biometricAuthManager: BiometricAuthManager // Option 1: Inject BiometricAuthManager
-    // Option 2: Create BiometricAuthManager instance inside ViewModel when needed (needs context)
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)
@@ -44,19 +42,8 @@ class LoginViewModel(
     private val _eventFlow = MutableSharedFlow<LoginViewEvent>()
     val eventFlow = _eventFlow.asSharedFlow()
 
-    // Option 2: Instantiate BiometricAuthManager here if not injected
-    // This requires careful context handling, Application context is fine for BiometricManager.from()
-    // but prompt itself needs FragmentActivity. For now, prompt is shown from View.
-    // private val biometricAuthManager = BiometricAuthManager(application)
-
-
     fun onLoginClicked() {
         if (BuildConfig.DEBUG) Log.d("LoginViewModel", "Login button clicked")
-        // Check biometric availability directly in ViewModel before emitting event to show prompt
-        // This makes sense if BiometricAuthManager is available/injectable here.
-        // For this refactor, we'll keep prompt initiation in View due to FragmentActivity context requirement for prompt.
-        // ViewModel will just signal the View to show it.
-
         _uiState.value = LoginUiState.Loading // Indicate loading before showing prompt
         viewModelScope.launch {
             _eventFlow.emit(LoginViewEvent.ShowBiometricPrompt)
@@ -81,18 +68,22 @@ class LoginViewModel(
     }
 
     fun onBiometricAuthenticationError(errorCode: Int, errString: CharSequence) {
-        if (BuildConfig.DEBUG) Log.e("LoginViewModel", "Biometric Auth Error: $errorCode - $errString")
-        _uiState.value = LoginUiState.Error("Login Error: $errString")
+        // Use the centralized BiometricErrorMapper
+        val errorMessage = BiometricErrorMapper.mapBiometricErrorCodeToString(errorCode, errString)
+        if (BuildConfig.DEBUG) Log.e("LoginViewModel", "Biometric Auth Error $errorCode: $errString. Mapped to: $errorMessage")
+        _uiState.value = LoginUiState.Error(errorMessage)
     }
 
-    fun onBiometricAuthenticationError(message: String) { // Overload for non-API errors
+    fun onBiometricAuthenticationError(message: String) { // Overload for non-API errors from UI (e.g. activity context null)
         if (BuildConfig.DEBUG) Log.e("LoginViewModel", "Biometric Auth Error: $message")
         _uiState.value = LoginUiState.Error(message)
     }
 
     fun onBiometricAuthenticationFailed() {
-        if (BuildConfig.DEBUG) Log.w("LoginViewModel", "Biometric Auth Failed (not recognized).")
-        _uiState.value = LoginUiState.Error("Login Failed: Fingerprint not recognized. Please try again.")
+        // This callback means the biometric was valid (e.g. a fingerprint) but not recognized.
+        val errorMessage = "Login Failed: Fingerprint not recognized. Please try again."
+        if (BuildConfig.DEBUG) Log.w("LoginViewModel", errorMessage)
+        _uiState.value = LoginUiState.Error(errorMessage)
     }
 
     fun resetStateToIdle() {
