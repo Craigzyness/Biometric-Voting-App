@@ -11,9 +11,15 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
-import com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator
+import com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator // Keep for direct call if needed, or remove if VM handles all
+import com.example.biometricvotingapp.ui.screens.registration.RegistrationUiState
+import com.example.biometricvotingapp.ui.screens.registration.RegistrationViewModel
+import com.example.biometricvotingapp.ui.screens.registration.RegistrationViewEvent
 import com.example.biometricvotingapp.utils.BiometricAuthManager
 import com.example.biometricvotingapp.utils.BiometricAvailabilityStatus
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import androidx.lifecycle.viewmodel.compose.viewModel // For viewModel() delegate
 // import androidx.compose.ui.tooling.preview.Preview // Uncomment for preview
 
 /**
@@ -25,20 +31,60 @@ import com.example.biometricvotingapp.utils.BiometricAvailabilityStatus
 
 @Composable
 fun RegistrationScreen(
-    onNavigateToLogin: () -> Unit, // Re-enable this for MainActivity
+    viewModel: RegistrationViewModel, // ViewModel instance is now passed directly
+    onNavigateToLogin: () -> Unit,
     onRegistrationSuccess: (generatedId: String) -> Unit
 ) {
-    val context = LocalContext.current
-    val activity = LocalContext.current as? FragmentActivity // BiometricPrompt requires FragmentActivity
+    val context = LocalContext.current // Still needed for BiometricAuthManager
+    val activity = LocalContext.current as? FragmentActivity // Still needed for BiometricAuthManager
+    // val application = LocalContext.current.applicationContext as Application // No longer needed here for factory
 
-    // It's better to manage manager instances via ViewModel and DI in a real app.
-    // For this step, instantiating directly for simplicity.
-    val biometricAuthManager = remember { BiometricAuthManager(context) }
+    // val factory = RegistrationViewModelFactory(application, AnonymizedIdGenerator, votingRepository) // Factory logic moved to caller
+    // val viewModel: RegistrationViewModel = viewModel(factory = factory) // VM is passed in
 
-    var isLoading by remember { mutableStateOf(false) }
-    var statusMessage by remember { mutableStateOf<String?>(null) }
-    var registeredId by remember { mutableStateOf<String?>(null) }
+    val uiState by viewModel.uiState.collectAsState()
 
+    // Handle one-time events from ViewModel
+    LaunchedEffect(key1 = viewModel.eventFlow) {
+        viewModel.eventFlow.collectLatest { event ->
+            when (event) {
+                is RegistrationViewEvent.ShowBiometricPrompt -> {
+                    if (activity != null) {
+                        val biometricAuthManager = BiometricAuthManager(context) // Could be member if needed elsewhere too
+                        // Check for biometric availability before prompting
+                        when (biometricAuthManager.canAuthenticateWithBiometrics()) {
+                            BiometricAvailabilityStatus.AVAILABLE -> {
+                                biometricAuthManager.promptForRegistration(
+                                    activity = activity,
+                                    onSuccess = { authResult ->
+                                        viewModel.onBiometricAuthenticationSuccess(authResult)
+                                    },
+                                    onError = { errorCode, errString ->
+                                        viewModel.onBiometricAuthenticationError(errorCode, errString)
+                                    },
+                                    onFailed = {
+                                        viewModel.onBiometricAuthenticationFailed()
+                                    }
+                                )
+                            }
+                            BiometricAvailabilityStatus.NONE_ENROLLED -> {
+                                viewModel.onBiometricAuthenticationError(-1, "No fingerprints enrolled. Please enroll in device settings.")
+                            }
+                            else -> {
+                                val availability = biometricAuthManager.canAuthenticateWithBiometrics()
+                                viewModel.onBiometricAuthenticationError(-1, "Biometric authentication not available ($availability). Check device settings.")
+                            }
+                        }
+                    } else {
+                         viewModel.onBiometricAuthenticationError(-1, "Activity context not available for BiometricPrompt.")
+                    }
+                }
+                is RegistrationViewEvent.NavigateToElectionList -> {
+                    onRegistrationSuccess(event.generatedId)
+                }
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -75,84 +121,44 @@ fun RegistrationScreen(
             )
 
             Button(
-                onClick = {
-                    if (activity == null) {
-                        statusMessage = "Error: Could not get required Activity context."
-                        Log.e("RegistrationScreen", "FragmentActivity context is null. Cannot show BiometricPrompt.")
-                        return@Button
-                    }
-
-                    isLoading = true
-                    statusMessage = null
-                    registeredId = null
-
-                    when (biometricAuthManager.canAuthenticateWithBiometrics()) {
-                        BiometricAvailabilityStatus.AVAILABLE -> {
-                            biometricAuthManager.promptForRegistration(
-                                activity = activity,
-                                onSuccess = { authResult ->
-                                    isLoading = false
-                                    // CRITICAL: Call the updated Anonymized ID Generator
-                                    val generatedId = AnonymizedIdGenerator.generate(context, authResult) // Pass context
-                                    if (generatedId != null) {
-                                        // Keep local state updates for immediate feedback if desired
-                                        registeredId = generatedId
-                                        statusMessage = "Registration Processing..." // Or similar before calling callback
-                                        Log.i("RegistrationScreen", "Biometric Auth Succeeded. Secure ID (first 8 chars): ${generatedId.take(8)}")
-                                        onRegistrationSuccess(generatedId) // Signal success to the caller
-                                    } else {
-                                        statusMessage = "Registration Error: Failed to generate secure ID."
-                                        Log.e("RegistrationScreen", "Failed to generate secure ID after biometric auth.")
-                                    }
-                                },
-                                onError = { errString ->
-                                    isLoading = false
-                                    statusMessage = "Registration Error: $errString"
-                                    Log.e("RegistrationScreen", "Biometric Auth Error: $errString")
-                                },
-                                onFailed = {
-                                    isLoading = false
-                                    statusMessage = "Registration Failed: Fingerprint not recognized. Please try again."
-                                    Log.w("RegistrationScreen", "Biometric Auth Failed.")
-                                }
-                            )
-                        }
-                        BiometricAvailabilityStatus.NONE_ENROLLED -> {
-                            isLoading = false
-                            statusMessage = "Error: No fingerprints enrolled. Please enroll a fingerprint in your device settings."
-                            Log.w("RegistrationScreen", "No biometrics enrolled.")
-                            // TODO: Offer to navigate to device security settings.
-                        }
-                        else -> {
-                            isLoading = false
-                            val availability = biometricAuthManager.canAuthenticateWithBiometrics()
-                            statusMessage = "Error: Biometric authentication not available ($availability). Check device settings."
-                            Log.w("RegistrationScreen", "Biometrics not available: $availability")
-                        }
-                    }
-                },
-                enabled = !isLoading && registeredId == null, // Disable if loading or already registered in this session
+                onClick = { viewModel.onRegisterClicked() },
+                enabled = uiState !is RegistrationUiState.Loading && uiState !is RegistrationUiState.AwaitingBiometrics,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp)
             ) {
-                if (isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimary)
-                } else {
-                    Text("Register with Fingerprint")
+                when (uiState) {
+                    is RegistrationUiState.Loading, RegistrationUiState.AwaitingBiometrics -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp).testTag("loadingIndicator"),
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                    else -> Text("Register with Fingerprint")
                 }
             }
 
-            statusMessage?.let {
-                Text(
-                    text = it,
-                    color = if (it.contains("Error", ignoreCase = true) || it.contains("Failed", ignoreCase = true)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.bodySmall,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(top = 16.dp)
-                )
+            // Display status messages from the ViewModel
+            val currentStatusMessage = when (val state = uiState) {
+                is RegistrationUiState.Loading -> state.message
+                is RegistrationUiState.Error -> state.message
+                is RegistrationUiState.Success -> state.message // Success message now comes from VM
+                is RegistrationUiState.AwaitingBiometrics -> "Awaiting biometric authentication..."
+                else -> null // Idle
             }
 
+            currentStatusMessage?.let { message ->
+                Text(
+                    text = message,
+                    color = when (uiState) {
+                        is RegistrationUiState.Error -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.primary
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 16.dp).testTag("statusMessageText")
+                )
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
             TextButton(onClick = onNavigateToLogin) {

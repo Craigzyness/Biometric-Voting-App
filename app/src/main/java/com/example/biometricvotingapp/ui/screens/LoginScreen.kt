@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -67,7 +68,7 @@ fun LoginScreen(
                 onClick = {
                     if (activity == null) {
                         statusMessage = "Error: Could not get required Activity context for BiometricPrompt."
-                        Log.e("LoginScreen", "FragmentActivity context is null.")
+                        if (BuildConfig.DEBUG) Log.e("LoginScreen", "FragmentActivity context is null.")
                         return@Button
                     }
 
@@ -80,44 +81,44 @@ fun LoginScreen(
                                 activity = activity,
                                 onSuccess = { authResult ->
                                     isLoading = false
-                                    Log.i("LoginScreen", "Login Biometric Auth Succeeded. AuthResult: $authResult")
+                                    if (BuildConfig.DEBUG) Log.i("LoginScreen", "Login Biometric Auth Succeeded. Has CryptoObject: ${authResult.cryptoObject != null}")
 
                                     // Now, try to get/re-derive the anonymized ID to confirm registration.
                                     val registeredAnonymizedId = AnonymizedIdGenerator.getRegisteredAnonymizedId(context)
 
                                     if (registeredAnonymizedId != null) {
-                                        statusMessage = "Login Successful! Welcome back. (ID: ${registeredAnonymizedId.take(8)}...)"
-                                        Log.i("LoginScreen", "User is registered. Anonymized ID (first 8 chars): ${registeredAnonymizedId.take(8)}")
+                                        statusMessage = "Login Successful! Welcome back. (ID: ${registeredAnonymizedId.take(8)}...)" // UI message is fine
+                                        if (BuildConfig.DEBUG) Log.i("LoginScreen", "User is registered. Anonymized ID (first 8 chars): ${registeredAnonymizedId.take(8)}")
                                         onLoginSuccess(registeredAnonymizedId) // Pass the ID or a success status
                                     } else {
                                         statusMessage = "Biometric recognized, but app registration not found. Please register if you haven't."
-                                        Log.w("LoginScreen", "Biometric auth success, but no registered anonymized ID components found.")
+                                        if (BuildConfig.DEBUG) Log.w("LoginScreen", "Biometric auth success, but no registered anonymized ID components found.")
                                         onLoginSuccess(null) // or some error status if the callback expects it
                                     }
-                                    // TODO: Navigate to main app screen on successful login and ID retrieval.
+                                    // Navigation to main app screen is handled by AppNavigator via onLoginSuccess callback.
                                 },
                                 onError = { errString ->
                                     isLoading = false
-                                    statusMessage = "Login Error: $errString"
-                                    Log.e("LoginScreen", "Login Biometric Auth Error: $errString")
+                                    statusMessage = "Login Error: $errString" // errString is from BiometricPrompt, usually not overly sensitive
+                                    if (BuildConfig.DEBUG) Log.e("LoginScreen", "Login Biometric Auth Error: $errString")
                                 },
                                 onFailed = {
                                     isLoading = false
                                     statusMessage = "Login Failed: Fingerprint not recognized. Please try again."
-                                    Log.w("LoginScreen", "Login Biometric Auth Failed.")
+                                    if (BuildConfig.DEBUG) Log.w("LoginScreen", "Login Biometric Auth Failed.")
                                 }
                             )
                         }
                         BiometricAvailabilityStatus.NONE_ENROLLED -> {
                             isLoading = false
                             statusMessage = "Error: No fingerprints enrolled. Please enroll a fingerprint in your device settings or register if you are a new user."
-                            Log.w("LoginScreen", "No biometrics enrolled for login.")
+                            if (BuildConfig.DEBUG) Log.w("LoginScreen", "No biometrics enrolled for login.")
                         }
                         else -> {
                             isLoading = false
                             val availability = biometricAuthManager.canAuthenticateWithBiometrics()
                             statusMessage = "Error: Biometric authentication not available ($availability)."
-                            Log.w("LoginScreen", "Biometrics not available for login: $availability")
+                            if (BuildConfig.DEBUG) Log.w("LoginScreen", "Biometrics not available for login: $availability")
                         }
                     }
                 },

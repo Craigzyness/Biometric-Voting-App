@@ -9,14 +9,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext // Needed for Application context
+import androidx.lifecycle.viewmodel.compose.viewModel // Needed for viewModel() delegate
+import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
 import com.example.biometricvotingapp.domain.model.Election // Import Election model
 import com.example.biometricvotingapp.ui.screens.ElectionListScreen
 import com.example.biometricvotingapp.ui.screens.LoginScreen
 import com.example.biometricvotingapp.ui.screens.RegistrationScreen
 import com.example.biometricvotingapp.ui.screens.VotingScreen // Import VotingScreen
-import com.example.biometricvotingapp.ui.screens.getSampleElections
 // TODO: Replace with your actual theme if you have one defined, e.g., in ui.theme package
 // import com.example.biometricvotingapp.ui.theme.BiometricVotingAppTheme
+// Removed getSampleElections import as it's no longer used here.
 
 /**
  * MainActivity.kt
@@ -54,61 +57,86 @@ class MainActivity : ComponentActivity() {
 fun AppNavigator() {
     // State to keep track of the current screen
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Registration) }
+    var currentAnonymizedId by remember { mutableStateOf<String?>(null) } // Store the anonymized ID
 
-    // Could also store the anonymized ID here if needed across app sessions (with proper persistence)
-    // var currentAnonymizedId by remember { mutableStateOf<String?>(null) }
+    // Create and remember VotingRepository instance
+    val votingRepository = remember {
+        com.example.biometricvotingapp.data.repository.VotingRepository(
+            com.example.biometricvotingapp.data.network.ApiService.instance
+        )
+    }
+    // Get Application context for ViewModel factories
+    val application = LocalContext.current.applicationContext as android.app.Application
 
     when (val screen = currentScreen) { // Use 'screen' for smart casting
         is Screen.Registration -> {
+            val factory = com.example.biometricvotingapp.ui.screens.registration.RegistrationViewModelFactory(
+                application,
+                com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator,
+                votingRepository
+            )
+            val viewModel: com.example.biometricvotingapp.ui.screens.registration.RegistrationViewModel = viewModel(factory = factory)
             RegistrationScreen(
+                viewModel = viewModel,
                 onNavigateToLogin = { currentScreen = Screen.Login },
                 onRegistrationSuccess = { generatedId ->
-                    // Handle successful registration
-                    Log.i("AppNavigator", "Registration successful. Generated ID (first 8): ${generatedId.take(8)}")
-                    // For MVP, we can directly navigate to ElectionList or Login.
-                    // Let's navigate to ElectionList after registration for now.
-                    // currentAnonymizedId = generatedId // Store if needed
+                    if (BuildConfig.DEBUG) Log.i("AppNavigator", "Registration successful. Generated ID (first 8): ${generatedId.take(8)}")
+                    currentAnonymizedId = generatedId // Store the ID
                     currentScreen = Screen.ElectionList
                 }
             )
         }
         is Screen.Login -> {
+            // LoginScreen does not yet have a ViewModel, its call remains the same
             LoginScreen(
                 onNavigateToRegister = { currentScreen = Screen.Registration },
                 onLoginSuccess = { anonymizedId ->
                     if (anonymizedId != null) {
-                        Log.i("AppNavigator", "Login successful. Anonymized ID (first 8): ${anonymizedId.take(8)}")
-                        // currentAnonymizedId = anonymizedId // Store if needed
+                        if (BuildConfig.DEBUG) Log.i("AppNavigator", "Login successful. Anonymized ID (first 8): ${anonymizedId.take(8)}")
+                        currentAnonymizedId = anonymizedId // Store the ID
                         currentScreen = Screen.ElectionList
                     } else {
-                        // Stay on Login screen, error message is handled within LoginScreen
-                        Log.w("AppNavigator", "Login failed or app registration not found.")
+                        if (BuildConfig.DEBUG) Log.w("AppNavigator", "Login failed or app registration not found.")
+                        // LoginScreen handles displaying its own error message.
                     }
                 }
             )
         }
         is Screen.ElectionList -> {
+            val factory = com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewModelFactory(application, votingRepository)
+            val viewModel: com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewModel = viewModel(factory = factory)
             ElectionListScreen(
-                elections = getSampleElections(), // Pass the sample data
+                viewModel = viewModel,
                 onElectionClicked = { selectedElection ->
-                    Log.d("AppNavigator", "Election clicked: ${selectedElection.title}")
-                    currentScreen = Screen.Voting(selectedElection) // Navigate to VotingScreen
+                    if (BuildConfig.DEBUG) Log.d("AppNavigator", "Election clicked: ${selectedElection.title}")
+                    if (currentAnonymizedId == null) {
+                        if (BuildConfig.DEBUG) Log.e("AppNavigator", "Error: User anonymized ID is null. Cannot navigate to Voting screen. Returning to Login.")
+                        currentScreen = Screen.Login // Or handle error appropriately
+                    } else {
+                        currentScreen = Screen.Voting(selectedElection)
+                    }
                 }
                 // TODO: Add onLogoutClicked = { currentScreen = Screen.Login; currentAnonymizedId = null }
             )
         }
-        is Screen.Voting -> { // New case for VotingScreen
+        is Screen.Voting -> {
+            val voterId = currentAnonymizedId ?: run {
+                if (BuildConfig.DEBUG) Log.e("AppNavigator", "Critical error: Navigated to VotingScreen with null anonymizedVoterId. Redirecting to Login.")
+                currentScreen = Screen.Login
+                return@AppNavigator // Corrected return for Composable
+            }
+            val factory = com.example.biometricvotingapp.ui.screens.voting.VotingViewModelFactory(application, votingRepository)
+            val viewModel: com.example.biometricvotingapp.ui.screens.voting.VotingViewModel = viewModel(factory = factory)
             VotingScreen(
-                election = screen.election, // Pass the election from the state
-                onVoteConfirmedBiometrically = { confirmedElection, selectedOption ->
-                    Log.i("AppNavigator", "Vote confirmed for ${confirmedElection.title}, option: $selectedOption")
-                    // For MVP, navigate back to election list after vote.
-                    // TODO: Here you would typically send the vote to a backend/blockchain.
-                    // For now, we simulate success and navigate.
-                    currentScreen = Screen.ElectionList
+                viewModel = viewModel,
+                anonymizedVoterId = voterId,
+                election = screen.election,
+                onVoteConfirmedAndSubmitted = { confirmedElection, selectedOption ->
+                    if (BuildConfig.DEBUG) Log.i("AppNavigator", "Vote confirmed and submitted for ${confirmedElection.title}, option: $selectedOption")
+                    currentScreen = Screen.ElectionList // Navigate back to election list
                 },
                 onNavigateBack = {
-                    Log.d("AppNavigator", "Navigating back from VotingScreen to ElectionList.")
+                    if (BuildConfig.DEBUG) Log.d("AppNavigator", "Navigating back from VotingScreen to ElectionList.")
                     currentScreen = Screen.ElectionList
                 }
             )

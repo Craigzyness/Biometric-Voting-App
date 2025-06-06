@@ -5,6 +5,7 @@ import android.os.Build
 import android.util.Log
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL // Optional fallback
+import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity // Required for BiometricPrompt
@@ -30,33 +31,31 @@ class BiometricAuthManager(private val context: Context) {
     fun canAuthenticateWithBiometrics(): BiometricAvailabilityStatus {
         return when (biometricManager.canAuthenticate(BIOMETRIC_STRONG)) {
             androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS -> {
-                Log.d(TAG, "Biometric authentication (STRONG) is available.")
+                if (BuildConfig.DEBUG) Log.d(TAG, "Biometric authentication (STRONG) is available.")
                 BiometricAvailabilityStatus.AVAILABLE
             }
             androidx.biometric.BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE -> {
-                Log.e(TAG, "No biometric features available on this device.")
+                if (BuildConfig.DEBUG) Log.e(TAG, "No biometric features available on this device.")
                 BiometricAvailabilityStatus.NO_HARDWARE
             }
             androidx.biometric.BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE -> {
-                Log.e(TAG, "Biometric features are currently unavailable.")
+                if (BuildConfig.DEBUG) Log.e(TAG, "Biometric features are currently unavailable.")
                 BiometricAvailabilityStatus.TEMPORARILY_UNAVAILABLE
             }
             androidx.biometric.BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> {
-                Log.e(TAG, "The user hasn't associated any biometric credentials with their account.")
-                // NOTE: For registration, this state might mean the user needs to enroll first.
-                // For login, this means they can't use biometrics.
+                if (BuildConfig.DEBUG) Log.e(TAG, "The user hasn't associated any biometric credentials with their account.")
                 BiometricAvailabilityStatus.NONE_ENROLLED
             }
             androidx.biometric.BiometricManager.BIOMETRIC_ERROR_SECURITY_UPDATE_REQUIRED -> {
-                Log.e(TAG, "Biometric features are unavailable due to a required security update.")
+                if (BuildConfig.DEBUG) Log.e(TAG, "Biometric features are unavailable due to a required security update.")
                 BiometricAvailabilityStatus.SECURITY_UPDATE_REQUIRED
             }
             androidx.biometric.BiometricManager.BIOMETRIC_ERROR_UNSUPPORTED -> {
-                 Log.e(TAG, "Biometric features are unsupported.")
+                 if (BuildConfig.DEBUG) Log.e(TAG, "Biometric features are unsupported.")
                 BiometricAvailabilityStatus.UNSUPPORTED
             }
             else -> {
-                Log.e(TAG, "Biometric availability check returned an unknown status.")
+                if (BuildConfig.DEBUG) Log.e(TAG, "Biometric availability check returned an unknown status.")
                 BiometricAvailabilityStatus.UNKNOWN
             }
         }
@@ -109,19 +108,19 @@ class BiometricAuthManager(private val context: Context) {
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     super.onAuthenticationSucceeded(result)
-                    Log.d(TAG, "Registration Biometric Authentication Succeeded!")
+                    if (BuildConfig.DEBUG) Log.d(TAG, "Registration Biometric Authentication Succeeded!")
                     onSuccess(result)
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
-                    Log.e(TAG, "Registration Biometric Authentication Error: $errorCode - $errString")
+                    if (BuildConfig.DEBUG) Log.e(TAG, "Registration Biometric Authentication Error: $errorCode - $errString")
                     onError(errString.toString())
                 }
 
                 override fun onAuthenticationFailed() {
                     super.onAuthenticationFailed()
-                    Log.w(TAG, "Registration Biometric Authentication Failed. Fingerprint not recognized.")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "Registration Biometric Authentication Failed. Fingerprint not recognized.")
                     onFailed()
                 }
             })
@@ -144,19 +143,19 @@ class BiometricAuthManager(private val context: Context) {
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     super.onAuthenticationSucceeded(result)
-                    Log.d(TAG, "Login Biometric Authentication Succeeded!")
+                    if (BuildConfig.DEBUG) Log.d(TAG, "Login Biometric Authentication Succeeded!")
                     onSuccess(result)
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
-                    Log.e(TAG, "Login Biometric Authentication Error: $errorCode - $errString")
+                    if (BuildConfig.DEBUG) Log.e(TAG, "Login Biometric Authentication Error: $errorCode - $errString")
                     onError(errString.toString())
                 }
 
                 override fun onAuthenticationFailed() {
                     super.onAuthenticationFailed()
-                    Log.w(TAG, "Login Biometric Authentication Failed. Fingerprint not recognized.")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "Login Biometric Authentication Failed. Fingerprint not recognized.")
                     onFailed()
                 }
             })
@@ -192,6 +191,7 @@ class BiometricAuthManager(private val context: Context) {
         activity: FragmentActivity,
         electionTitle: String,
         selectedOption: String,
+        cryptoObject: BiometricPrompt.CryptoObject?, // New parameter
         onSuccess: (BiometricPrompt.AuthenticationResult) -> Unit,
         onError: (String) -> Unit,
         onFailed: () -> Unit
@@ -201,24 +201,30 @@ class BiometricAuthManager(private val context: Context) {
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     super.onAuthenticationSucceeded(result)
-                    Log.d(TAG, "Vote Confirmation Biometric Authentication Succeeded!")
+                    if (BuildConfig.DEBUG) Log.d(TAG, "Vote Confirmation Biometric Authentication Succeeded!")
                     onSuccess(result)
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
-                    Log.e(TAG, "Vote Confirmation Biometric Authentication Error: $errorCode - $errString")
+                    if (BuildConfig.DEBUG) Log.e(TAG, "Vote Confirmation Biometric Authentication Error: $errorCode - $errString")
                     onError(errString.toString())
                 }
 
                 override fun onAuthenticationFailed() {
                     super.onAuthenticationFailed()
-                    Log.w(TAG, "Vote Confirmation Biometric Authentication Failed.")
+                    if (BuildConfig.DEBUG) Log.w(TAG, "Vote Confirmation Biometric Authentication Failed.")
                     onFailed()
                 }
             })
 
-        biometricPrompt.authenticate(promptInfo)
+        if (cryptoObject != null) {
+            if (BuildConfig.DEBUG) Log.d(TAG, "Authenticating with CryptoObject for vote confirmation.")
+            biometricPrompt.authenticate(promptInfo, cryptoObject)
+        } else {
+            if (BuildConfig.DEBUG) Log.w(TAG, "Authenticating for vote confirmation WITHOUT CryptoObject. This may be unintended.")
+            biometricPrompt.authenticate(promptInfo)
+        }
     }
 }
 

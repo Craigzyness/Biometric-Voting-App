@@ -2,17 +2,34 @@ package com.example.biometricvotingapp.ui.screens
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.biometricvotingapp.domain.model.Election // Import the Election data class
+import com.example.biometricvotingapp.ui.screens.electionlist.ElectionListUiState
+import com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewModel
 // import androidx.compose.ui.tooling.preview.Preview // Uncomment for preview
 
 /**
@@ -22,44 +39,65 @@ import com.example.biometricvotingapp.domain.model.Election // Import the Electi
  * For MVP, this list is hardcoded.
  */
 
-// TODO: In a real app, this list would come from a ViewModel, which fetches it from a repository/backend.
-// For MVP, we'll define sample data directly here or pass it as a parameter.
+// For MVP, this list is fetched from the backend via VotingRepository, managed by ElectionListViewModel.
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ElectionListScreen(
-    elections: List<Election>, // The list of elections to display
+    viewModel: ElectionListViewModel, // ViewModel instance is now passed directly
     onElectionClicked: (Election) -> Unit, // Callback when an election is clicked
     // TODO: Add callbacks for other actions like logout, refresh, etc.
     // onLogoutClicked: () -> Unit
 ) {
+    // val application = LocalContext.current.applicationContext as Application // No longer needed here
+    // val factory = ElectionListViewModelFactory(application, votingRepository) // Factory logic moved to caller
+    // val viewModel: ElectionListViewModel = viewModel(factory = factory) // VM is passed in
+    val uiState by viewModel.uiState.collectAsState()
+
     Scaffold(
         topBar = {
             TopAppBar(title = { Text("Available Elections") })
         }
     ) { paddingValues ->
-        if (elections.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(16.dp),
-                contentAlignment = androidx.compose.ui.Alignment.Center
-            ) {
-                Text("No elections available at the moment.")
+        when (val state = uiState) {
+            is ElectionListUiState.Loading -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(paddingValues),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator()
+                }
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(top = 8.dp, bottom = 8.dp) // Add some padding around the list
-            ) {
-                items(elections, key = { election -> election.id }) { election ->
-                    ElectionListItem(
-                        election = election,
-                        onClicked = { onElectionClicked(election) }
-                    )
-                    Divider() // Adds a line between items
+            is ElectionListUiState.Error -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(paddingValues),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "Error: ${state.message}", color = MaterialTheme.colorScheme.error)
+                }
+            }
+            is ElectionListUiState.Empty -> {
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(paddingValues),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("No elections available at the moment.")
+                }
+            }
+            is ElectionListUiState.Success -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues)
+                        .padding(top = 8.dp, bottom = 8.dp)
+                ) {
+                    items(state.elections, key = { election -> election.id }) { domainElection ->
+                        ElectionListItem(
+                            election = domainElection, // Already a domain model from VM
+                            onClicked = { onElectionClicked(domainElection) }
+                        )
+                        Divider()
+                    }
                 }
             }
         }
