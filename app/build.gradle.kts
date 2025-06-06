@@ -6,22 +6,44 @@ plugins {
     id("com.google.firebase.crashlytics") version "2.9.9" // Apply directly with version
 }
 
+// Define keystore properties file
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = java.util.Properties()
+if (keystorePropertiesFile.exists() && keystorePropertiesFile.isFile) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
 android {
     namespace = "com.example.biometricvotingapp"
     compileSdk = 34 // Or latest
 
     // Signing configurations for APKs
-    // IMPORTANT: These are placeholder values. For actual release builds,
-    // replace these with your real keystore details and ensure the keystore file
-    // is properly secured. It's best practice to load these from a
-    // separate, non-version-controlled file (e.g., keystore.properties)
-    // or environment variables.
+    // IMPORTANT: For actual release builds, create a `keystore.properties` file in the
+    // root project directory (alongside your root build.gradle.kts or settings.gradle.kts).
+    // This file should NOT be committed to version control (add it to .gitignore).
+    //
+    // The `keystore.properties` file should contain the following properties:
+    // storeFile=<path_to_your_keystore_file_relative_to_root_project_dir_e.g._app/release.keystore.jks>
+    // storePassword=<your_keystore_password>
+    // keyAlias=<your_key_alias>
+    // keyPassword=<your_key_password>
+    //
+    // If `keystore.properties` is not found, or properties are missing,
+    // placeholder values will be used below. These placeholders WILL NOT create a valid
+    // runnable release build and are only for allowing Gradle sync to pass.
     signingConfigs {
-        create("releasePlaceholder") {
-            storeFile = file("placeholder.keystore") // Placeholder path, replace with actual keystore
-            storePassword = "placeholder_password"   // Placeholder, replace with actual password
-            keyAlias = "placeholder_alias"           // Placeholder, replace with actual alias
-            keyPassword = "placeholder_key_password" // Placeholder, replace with actual key password
+        create("release") {
+            storeFile = file(keystoreProperties.getProperty("storeFile") ?: "placeholder.keystore")
+            storePassword = keystoreProperties.getProperty("storePassword") ?: "placeholder_password"
+            keyAlias = keystoreProperties.getProperty("keyAlias") ?: "placeholder_alias"
+            keyPassword = keystoreProperties.getProperty("keyPassword") ?: "placeholder_key_password"
+
+            // It's good practice to validate if properties were actually loaded if you want to fail early
+            // For example, you could add checks here:
+            if (storeFile.name == "placeholder.keystore" && keystorePropertiesFile.exists()) {
+                println("Warning: 'storeFile' not found in keystore.properties. Using placeholder.")
+            }
+            // Add similar checks for other properties if desired.
         }
     }
 
@@ -45,17 +67,28 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Assign the placeholder signing configuration to the release build type.
-            // For actual releases, ensure this uses a properly configured signing config.
-            signingConfig = signingConfigs.getByName("releasePlaceholder")
+            // Assign the 'release' signing configuration to the release build type.
+            signingConfig = signingConfigs.getByName("release")
+            // TODO: Replace with your actual production API base URL
+            buildConfigField("String", "API_BASE_URL", "\"https://your.production.api/api/v1/\"")
+            // Coverage usually not enabled for release builds
+            // enableUnitTestCoverage = false
+            // enableAndroidTestCoverage = false
         }
         debug {
             isMinifyEnabled = false
             // Debug builds are typically signed with a default debug keystore automatically.
-            // You could also assign a specific signing config here if needed, e.g.:
-            // signingConfig = signingConfigs.getByName("debug") // if you create a 'debug' signingConfig
+            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:3000/api/v1/\"")
+            // Enable code coverage for debug builds
+            enableUnitTestCoverage = true
+            enableAndroidTestCoverage = true
         }
     }
+
+    testCoverage {
+        jacocoVersion = "0.8.11" // Use a recent stable JaCoCo version
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
@@ -65,6 +98,7 @@ android {
     }
     buildFeatures {
         compose = true // Enable Jetpack Compose
+        buildConfig = true // Ensure BuildConfig is generated (usually true by default for app modules)
     }
     composeOptions {
         kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
@@ -104,10 +138,11 @@ dependencies {
     implementation("com.google.firebase:firebase-analytics-ktx")
 
     // Network
+    // TODO: After updating libraries, ensure app compiles, tests pass, and perform manual testing.
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
     implementation("com.squareup.retrofit2:converter-gson:2.9.0") // Gson converter
-    implementation("com.squareup.okhttp3:okhttp:4.9.3") // OkHttp (use a version compatible with Retrofit 2.9.0)
-    implementation("com.google.code.gson:gson:2.8.9") // Gson library itself
+    implementation("com.squareup.okhttp3:okhttp:4.12.0") // Updated OkHttp
+    implementation("com.google.code.gson:gson:2.10.1") // Updated Gson library
 
     // Testing
     testImplementation(libs.junit)
