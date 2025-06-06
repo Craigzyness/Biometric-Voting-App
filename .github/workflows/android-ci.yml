@@ -1,0 +1,102 @@
+name: Android CI
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - 'settings.gradle.kts'
+      - 'gradle.properties' # If it exists and affects builds
+      - '.github/workflows/android-ci.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - 'settings.gradle.kts'
+      - 'gradle.properties'
+      - '.github/workflows/android-ci.yml'
+
+jobs:
+  build_and_test_android:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17' # As typically required by modern Android Gradle Plugin
+        distribution: 'temurin' # Popular OpenJDK distribution
+        cache: 'gradle' # Enable caching for Gradle
+
+    # Optional: Set up Android SDK using a dedicated action if more control is needed
+    # For basic builds and unit tests, often JDK + Gradle setup is enough if AGP handles SDK download.
+    # However, to be explicit or for emulator tests later:
+    # - name: Set up Android SDK
+    #   uses: android-actions/setup-android@v3 # Using v3 as an example
+
+    - name: Grant execute permissions for gradlew
+      run: chmod +x ./gradlew
+
+    - name: Build debug APK
+      run: ./gradlew :app:assembleDebug
+
+    - name: Run unit tests
+      run: ./gradlew :app:testDebugUnitTest
+
+    - name: Run Android Lint
+      run: ./gradlew :app:lintDebug
+
+    # --- Release Build Steps (Conceptual: Requires Secrets) ---
+    - name: Decode Keystore and Create keystore.properties (Release)
+      if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) # Example: Run only on push to main or release branches
+      env:
+        ANDROID_RELEASE_KEYSTORE_B64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_B64 }}
+        ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+        ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+        ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+      run: |
+        echo "Simulating Keystore setup..."
+        if [ -z "$ANDROID_RELEASE_KEYSTORE_B64" ]; then
+          echo "ANDROID_RELEASE_KEYSTORE_B64 secret not found. Skipping release build steps."
+          # exit 1 # Or just skip if this is acceptable for some branches
+        else
+          echo "Decoding Keystore file to app/release.keystore.jks"
+          echo $ANDROID_RELEASE_KEYSTORE_B64 | base64 --decode > app/release.keystore.jks
+          echo "Creating keystore.properties"
+          echo "storeFile=release.keystore.jks" > app/keystore.properties
+          echo "storePassword=$ANDROID_RELEASE_STORE_PASSWORD" >> app/keystore.properties
+          echo "keyAlias=$ANDROID_RELEASE_KEY_ALIAS" >> app/keystore.properties
+          echo "keyPassword=$ANDROID_RELEASE_KEY_PASSWORD" >> app/keystore.properties
+          echo "Keystore and keystore.properties configured for release."
+        fi
+
+    - name: Build Release AAB
+      if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && env.ANDROID_RELEASE_KEYSTORE_B64 != '' # Run if keystore was processed
+      run: ./gradlew :app:bundleRelease
+
+    - name: Upload Release AAB
+      if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) && env.ANDROID_RELEASE_KEYSTORE_B64 != '' # Run if keystore was processed
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-aab
+        path: app/build/outputs/bundle/release/app-release.aab
+        if-no-files-found: error # Fails the step if the AAB is not found
+
+    # --- Optional: Upload other reports ---
+    # - name: Upload Lint results
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: lint-reports
+    #     path: app/build/reports/lint-results-debug.html
+
+    # - name: Upload Test results
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: unit-test-reports
+    #     path: app/build/reports/tests/testDebugUnitTest/
+```

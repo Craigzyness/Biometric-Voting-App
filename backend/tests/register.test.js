@@ -90,4 +90,67 @@ describe('/api/v1/register', () => {
         expect(response.body).toHaveProperty('error', 'Invalid or missing anonymizedVoterId.');
     });
 
+    it('should return 400 Bad Request if anonymizedVoterId is too long', async () => {
+        const longId = 'a'.repeat(256); // 256 chars
+        const response = await request(app)
+            .post('/api/v1/register')
+            .send({ anonymizedVoterId: longId });
+        expect(response.statusCode).toBe(400);
+        expect(response.body).toHaveProperty('error', 'anonymizedVoterId must not exceed 255 characters.');
+    });
+
+    it('should return 400 Bad Request if anonymizedVoterId is not a valid SHA256 hex string (wrong length)', async () => {
+        const invalidHexId = 'a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f512345'; // 61 chars
+        const response = await request(app)
+            .post('/api/v1/register')
+            .send({ anonymizedVoterId: invalidHexId });
+        expect(response.statusCode).toBe(400);
+        expect(response.body).toHaveProperty('error', 'anonymizedVoterId must be a valid 64-character hex string.');
+    });
+
+    it('should return 400 Bad Request if anonymizedVoterId is not a valid SHA256 hex string (invalid characters)', async () => {
+        const invalidHexId = 'g0h1i2j3k4l5g0h1i2j3k4l5g0h1i2j3k4l5g0h1i2j3k4l5g0h1i2j3k4l51234'; // 64 chars, but with non-hex
+        const response = await request(app)
+            .post('/api/v1/register')
+            .send({ anonymizedVoterId: invalidHexId });
+        expect(response.statusCode).toBe(400);
+        expect(response.body).toHaveProperty('error', 'anonymizedVoterId must be a valid 64-character hex string.');
+    });
+
+    it('should register successfully with a valid SHA256 hex anonymizedVoterId', async () => {
+        const validHexId = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f61234'; // 64 hex chars
+        const response = await request(app)
+            .post('/api/v1/register')
+            .send({ anonymizedVoterId: validHexId });
+        expect(response.statusCode).toBe(201);
+        expect(response.body.voter.anonymizedVoterId).toBe(validHexId);
+    });
+
+    it('should treat mixed-case anonymizedVoterIds as the same (due to lowercase normalization)', async () => {
+        const idMixedCase = 'A1b2C3d4E5f6A1b2C3d4E5f6A1b2C3d4E5f6A1b2C3d4E5f6A1b2C3d4E5f61234';
+        const idLowerCase = idMixedCase.toLowerCase();
+
+        // Register with mixed case
+        let response = await request(app)
+            .post('/api/v1/register')
+            .send({ anonymizedVoterId: idMixedCase });
+
+        expect(response.statusCode).toBe(201);
+        expect(response.body.voter.anonymizedVoterId).toBe(idLowerCase); // Should be stored as lowercase
+
+        // Attempt to register with lowercase (should be a conflict)
+        response = await request(app)
+            .post('/api/v1/register')
+            .send({ anonymizedVoterId: idLowerCase });
+        expect(response.statusCode).toBe(409);
+        expect(response.body).toHaveProperty('error', 'This anonymizedVoterId is already registered.');
+
+        // Attempt to register with another mixed case (should also be a conflict)
+        const idAnotherMixedCase = 'a1B2c3D4e5F6a1B2c3D4e5F6a1B2c3D4e5F6a1B2c3D4e5F6a1B2c3D4e5F61234';
+        response = await request(app)
+            .post('/api/v1/register')
+            .send({ anonymizedVoterId: idAnotherMixedCase });
+        expect(response.statusCode).toBe(409);
+        expect(response.body).toHaveProperty('error', 'This anonymizedVoterId is already registered.');
+    });
 });

@@ -113,11 +113,12 @@ class VotingViewModel(
                 val voteResult = votingRepository.submitVote(voteRequest)
                 voteResult.fold(
                     onSuccess = { backendResponse ->
-                        val successMessage = backendResponse.message ?: "Vote cast successfully!"
-                        if (BuildConfig.DEBUG) Log.i("VotingViewModel", "Backend vote submission successful: $successMessage")
-                        _uiState.value = VotingUiState.Success(successMessage) // Keep success state for a moment
+                        // val originalSuccessMessage = backendResponse.message ?: "Vote cast successfully!"
+                        val newSuccessMessage = "Vote submitted successfully and recorded anonymously!"
+                        if (BuildConfig.DEBUG) Log.i("VotingViewModel", "Backend vote submission successful. Original msg: ${backendResponse.message}, New msg: $newSuccessMessage")
+                        _uiState.value = VotingUiState.Success(newSuccessMessage) // Keep success state for a moment
                         viewModelScope.launch { // Emit navigation event
-                            _eventFlow.emit(VotingViewEvent.VoteSubmissionSuccessAndNavigate(successMessage))
+                            _eventFlow.emit(VotingViewEvent.VoteSubmissionSuccessAndNavigate(newSuccessMessage))
                         }
                     },
                     onFailure = { error ->

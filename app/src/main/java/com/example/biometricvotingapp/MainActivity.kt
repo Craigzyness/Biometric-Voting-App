@@ -87,23 +87,27 @@ fun AppNavigator() {
             )
         }
         is Screen.Login -> {
-            // LoginScreen does not yet have a ViewModel, its call remains the same
+            val factory = com.example.biometricvotingapp.ui.screens.login.LoginViewModelFactory(
+                application,
+                com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator
+            )
+            val viewModel: com.example.biometricvotingapp.ui.screens.login.LoginViewModel = viewModel(factory = factory)
             LoginScreen(
+                viewModel = viewModel,
                 onNavigateToRegister = { currentScreen = Screen.Registration },
-                onLoginSuccess = { anonymizedId ->
-                    if (anonymizedId != null) {
-                        if (BuildConfig.DEBUG) Log.i("AppNavigator", "Login successful. Anonymized ID (first 8): ${anonymizedId.take(8)}")
-                        currentAnonymizedId = anonymizedId // Store the ID
-                        currentScreen = Screen.ElectionList
-                    } else {
-                        if (BuildConfig.DEBUG) Log.w("AppNavigator", "Login failed or app registration not found.")
-                        // LoginScreen handles displaying its own error message.
-                    }
+                onLoginSuccess = { generatedId -> // Renamed from anonymizedId for clarity from VM event
+                    if (BuildConfig.DEBUG) Log.i("AppNavigator", "Login successful. Anonymized ID (first 8): ${generatedId.take(8)}")
+                    currentAnonymizedId = generatedId // Store the ID
+                    currentScreen = Screen.ElectionList
                 }
             )
         }
         is Screen.ElectionList -> {
-            val factory = com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewModelFactory(application, votingRepository)
+            val factory = com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewModelFactory(
+                application,
+                votingRepository,
+                currentAnonymizedId // Pass the anonymized ID
+            )
             val viewModel: com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewModel = viewModel(factory = factory)
             ElectionListScreen(
                 viewModel = viewModel,
@@ -115,8 +119,12 @@ fun AppNavigator() {
                     } else {
                         currentScreen = Screen.Voting(selectedElection)
                     }
+                },
+                onLogout = {
+                    if (BuildConfig.DEBUG) Log.i("AppNavigator", "Logout requested.")
+                    currentAnonymizedId = null
+                    currentScreen = Screen.Login
                 }
-                // TODO: Add onLogoutClicked = { currentScreen = Screen.Login; currentAnonymizedId = null }
             )
         }
         is Screen.Voting -> {

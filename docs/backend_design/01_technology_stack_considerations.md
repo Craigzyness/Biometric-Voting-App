@@ -1,6 +1,6 @@
 # Backend Technology Stack & Database Considerations
 
-Date: YYYY-MM-DD
+Date: (Refer to Git history for the last update date of this document)
 
 This document provides a discussion framework for selecting an appropriate backend technology stack and database for the Biometric Voting App. The choices made here will significantly impact development speed, scalability, security, and maintainability.
 
@@ -96,4 +96,3 @@ The final decision on stack and database should be made after considering:
 *   Hosting environment and DevOps capabilities.
 
 This document serves as a starting point for that discussion.
-```

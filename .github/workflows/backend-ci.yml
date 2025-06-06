@@ -1,0 +1,72 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+
+    services:
+      postgres:
+        image: postgres:15-alpine # Using a reasonably recent version
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: biometric_voting_app_test_db # This will be the DB name tests connect to
+        ports:
+          - 5432:5432 # Map container port 5432 to host port 5432
+        options: >- # Health check to wait for PostgreSQL to be ready
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    strategy:
+      matrix:
+        node-version: [ '18.x', '20.x' ]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: backend/package-lock.json
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Wait for PostgreSQL to be ready # Optional explicit wait, though health check helps
+      run: sleep 10 # Simple sleep, or use a script to poll pg_isready on localhost
+
+    - name: Run tests
+      run: npm test
+      env:
+        NODE_ENV: test
+        DB_HOST: localhost # Service containers are typically mapped to localhost on the runner
+        DB_PORT: 5432 # Port mapped from the service
+        DB_USER: testuser # Must match POSTGRES_USER in service definition
+        DB_PASSWORD: testpassword # Must match POSTGRES_PASSWORD in service definition
+        DB_TEST_NAME: biometric_voting_app_test_db # Must match POSTGRES_DB for the app to connect to the correct DB
+        # Ensure your application's database connection logic (in server.js for NODE_ENV=test)
+        # uses DB_TEST_NAME as the database name. The current server.js uses DB_NAME_TEST.
+        # Let's align. The service creates POSTGRES_DB. The app uses DB_NAME_TEST if NODE_ENV=test.
+        # So, POSTGRES_DB in service should be same as DB_TEST_NAME env var for the app.
+        # It seems DB_TEST_NAME is the env var the app uses, so it's correctly set here.
+```

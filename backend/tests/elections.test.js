@@ -138,5 +138,167 @@ describe('/api/v1/elections', () => {
         expect(election).toHaveProperty('endTimestamp'); // ISO String
         expect(new Date(election.endTimestamp).toISOString()).toBe(electionData.endTimestamp);
         expect(election).toHaveProperty('status', electionData.status);
+        expect(election).toHaveProperty('hasVoted', false); // Default for no user ID
     });
+
+    // --- BEGIN New Tests for hasVoted logic ---
+    describe('/api/v1/elections with anonymizedVoterId for hasVoted status', () => {
+        let voter1, voter2;
+        let election1Id, election2Id, election3Id;
+
+        const createActiveElectionPayload = (code, title = 'Active Election') => {
+            const now = new Date();
+            return {
+                electionCode: code, title: `${title} ${code}`, description: 'This is an active election.',
+                options: ['Yes', 'No'],
+                startTimestamp: new Date(now.getTime() - 1 * 60 * 60 * 1000).toISOString(),
+                endTimestamp: new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+                status: 'ACTIVE'
+            };
+        };
+
+        async function seedVoter(anonymizedVoterId) {
+            const result = await dbPool.query(
+                `INSERT INTO "Voters" (anonymized_voter_id, is_eligible) VALUES ($1, TRUE) RETURNING id, anonymized_voter_id`,
+                [anonymizedVoterId]
+            );
+            return result.rows[0];
+        }
+
+        async function seedVote(voterId, electionId, selectedOption = 'Yes') {
+            await dbPool.query(
+                `INSERT INTO "Votes" (voter_id, election_id, selected_option_value) VALUES ($1, $2, $3)`,
+                [voterId, electionId, selectedOption]
+            );
+        }
+
+        beforeEach(async () => {
+            // Seed voters
+            voter1 = await seedVoter('voter1_hasvoted_test_sha256_hex_id_001'); // Valid SHA256 format
+            voter2 = await seedVoter('voter2_hasvoted_test_sha256_hex_id_002'); // Valid SHA256 format
+
+            // Seed elections
+            election1Id = (await dbPool.query(`INSERT INTO "Elections" (election_code, title, description, options, start_timestamp, end_timestamp, status) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, Object.values(createActiveElectionPayload('E01')))).rows[0].id;
+            election2Id = (await dbPool.query(`INSERT INTO "Elections" (election_code, title, description, options, start_timestamp, end_timestamp, status) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, Object.values(createActiveElectionPayload('E02')))).rows[0].id;
+            election3Id = (await dbPool.query(`INSERT INTO "Elections" (election_code, title, description, options, start_timestamp, end_timestamp, status) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`, Object.values(createActiveElectionPayload('E03')))).rows[0].id;
+
+            // Seed votes: voter1 voted in E01 and E03
+            await seedVote(voter1.id, election1Id);
+            await seedVote(voter1.id, election3Id);
+        });
+
+        it('should return all elections with hasVoted = false if no anonymizedVoterId is provided', async () => {
+            const response = await request(app).get('/api/v1/elections');
+            expect(response.statusCode).toBe(200);
+            expect(response.body.elections.length).toBe(3);
+            response.body.elections.forEach(election => {
+                expect(election.hasVoted).toBe(false);
+            });
+        });
+
+        it('should return 400 if provided anonymizedVoterId is invalid format', async () => {
+            const response = await request(app).get('/api/v1/elections?anonymizedVoterId=invalid-id-format');
+            expect(response.statusCode).toBe(400);
+            expect(response.body.error).toContain('anonymizedVoterId must be a valid 64-character hex string');
+        });
+
+        it('should return hasVoted = false for all elections if voter is not found', async () => {
+            const nonExistentVoterId = '00000000000000000000000000000000000000000000000000000000deadbeef'; // Valid format, not in DB
+            const response = await request(app).get(`/api/v1/elections?anonymizedVoterId=${nonExistentVoterId}`);
+            expect(response.statusCode).toBe(200);
+            expect(response.body.elections.length).toBe(3);
+            response.body.elections.forEach(election => {
+                expect(election.hasVoted).toBe(false);
+            });
+        });
+
+        it('should return correct hasVoted status for a voter who has voted in some elections', async () => {
+            const response = await request(app).get(`/api/v1/elections?anonymizedVoterId=${voter1.anonymized_voter_id}`);
+            expect(response.statusCode).toBe(200);
+            expect(response.body.elections.length).toBe(3); // All active elections still returned
+
+            const electionMap = new Map(response.body.elections.map(e => [e.id, e]));
+            expect(electionMap.get(election1Id).hasVoted).toBe(true);
+            expect(electionMap.get(election2Id).hasVoted).toBe(false);
+            expect(electionMap.get(election3Id).hasVoted).toBe(true);
+        });
+
+        it('should return hasVoted = false for all elections for a voter who has not voted in any', async () => {
+            const response = await request(app).get(`/api/v1/elections?anonymizedVoterId=${voter2.anonymized_voter_id}`);
+            expect(response.statusCode).toBe(200);
+            expect(response.body.elections.length).toBe(3);
+            response.body.elections.forEach(election => {
+                expect(election.hasVoted).toBe(false);
+            });
+        });
+
+        it('should return correct hasVoted status when provided a mixed-case anonymizedVoterId for a registered voter', async () => {
+            const mixedCaseVoterId = 'VOTER1_HASVOTED_TEST_SHA256_HEX_ID_001'; // Uppercase version of voter1.anonymized_voter_id
+            const response = await request(app).get(`/api/v1/elections?anonymizedVoterId=${mixedCaseVoterId}`);
+            expect(response.statusCode).toBe(200);
+            expect(response.body.elections.length).toBe(3);
+
+            const electionMap = new Map(response.body.elections.map(e => [e.id, e]));
+            expect(electionMap.get(election1Id).hasVoted).toBe(true); // voter1 voted in E01
+            expect(electionMap.get(election2Id).hasVoted).toBe(false);
+            expect(electionMap.get(election3Id).hasVoted).toBe(true); // voter1 voted in E03
+        });
+
+        it('should correctly return an election with an empty options array', async () => {
+            const emptyOptionsElectionCode = 'EMPTYOPT';
+            await seedElection(dbPool, {
+                electionCode: emptyOptionsElectionCode, title: 'Empty Options Election', description: 'No options here',
+                options: [], // Empty options array
+                startTimestamp: new Date(Date.now() - 3600000).toISOString(),
+                endTimestamp: new Date(Date.now() + 3600000).toISOString(),
+                status: 'ACTIVE'
+            });
+
+            const response = await request(app).get('/api/v1/elections');
+            expect(response.statusCode).toBe(200);
+            const foundElection = response.body.elections.find(e => e.electionCode === emptyOptionsElectionCode);
+            expect(foundElection).toBeDefined(); // Check if the election was found
+            expect(foundElection.options).toEqual([]);
+            expect(foundElection.hasVoted).toBe(false); // Assuming no voterId provided
+        });
+
+        it('should return correct hasVoted status for an ineligible voter', async () => {
+            // Seed an ineligible voter
+            const ineligibleVoterData = await seedVoter('ineligible_voter_sha256_hex_003');
+            await dbPool.query('UPDATE "Voters" SET is_eligible = FALSE WHERE id = $1', [ineligibleVoterData.id]);
+
+            // This voter voted in election1Id before becoming ineligible
+            await seedVote(ineligibleVoterData.id, election1Id);
+
+            const response = await request(app).get(`/api/v1/elections?anonymizedVoterId=${ineligibleVoterData.anonymized_voter_id}`);
+            expect(response.statusCode).toBe(200);
+            const electionMap = new Map(response.body.elections.map(e => [e.id, e]));
+
+            // hasVoted should still reflect past votes even if currently ineligible
+            expect(electionMap.get(election1Id).hasVoted).toBe(true);
+            expect(electionMap.get(election2Id).hasVoted).toBe(false);
+        });
+
+    });
+    // --- END New Tests for hasVoted logic ---
+
+    // --- BEGIN Test for Index Creation ---
+    describe('Database Initialization Checks for Elections', () => {
+        it('should have created the idx_elections_status_start_end index on the Elections table', async () => {
+            // This test relies on initializeDatabase() having been run by the time the app starts
+            // or specifically called if needed for a test setup.
+            // The server.js already calls initializeDatabase when not in 'test' mode for app.listen,
+            // but for tests, the schema setup is implicit via the main pool or explicit calls.
+            // We assume the schema is initialized for the test DB.
+            const dbPool = getTestPool();
+            const indexCheckQuery = `
+                SELECT 1
+                FROM pg_indexes
+                WHERE tablename = 'Elections' AND indexname = 'idx_elections_status_start_end';
+            `;
+            const { rows } = await dbPool.query(indexCheckQuery);
+            expect(rows.length).toBe(1); // Expect the index to exist
+        });
+    });
+    // --- END Test for Index Creation ---
 });

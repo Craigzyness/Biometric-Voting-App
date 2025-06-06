@@ -77,29 +77,48 @@ class VotingRepositoryTest {
     // --- getElections Tests ---
 
     @Test
-    fun `getElections success returns Result_success with election list`() = runTest {
-        val electionDto1 = ElectionDto("id1", "E1", "Desc1", "Desc1?", listOf("A","B"), "start1", "end1", "ACTIVE")
-        val electionDto2 = ElectionDto("id2", "E2", "Desc2", "Desc2?", listOf("C","D"), "start2", "end2", "ACTIVE")
+    fun `getElections success returns Result_success with election list (no voterId)`() = runTest {
+        val electionDto1 = ElectionDto("id1", "E1", "Title1", "Desc1?", listOf("A","B"), "start1", "end1", "ACTIVE", false)
+        val electionDto2 = ElectionDto("id2", "E2", "Title2", "Desc2?", listOf("C","D"), "start2", "end2", "ACTIVE", null)
         val mockElectionList = listOf(electionDto1, electionDto2)
-        val mockListResponse = ElectionListResponse(mockElectionList) // Wrapper object
+        val mockListResponse = ElectionListResponse(mockElectionList)
         val mockSuccessResponse: Response<ElectionListResponse> = Response.success(mockListResponse)
 
-        coEvery { mockApiService.getElections() } returns mockSuccessResponse
+        // Expect call with null voterId
+        coEvery { mockApiService.getElections(null) } returns mockSuccessResponse
 
-        val result = votingRepository.getElections()
+        val result = votingRepository.getElections(null)
 
         assertTrue(result.isSuccess)
         assertEquals(mockElectionList, result.getOrNull())
     }
 
     @Test
-    fun `getElections HTTP error returns Result_failure`() = runTest {
+    fun `getElections success returns Result_success with election list (with voterId)`() = runTest {
+        val testVoterId = "voter-test-id"
+        val electionDto1 = ElectionDto("id1", "E1", "Title1", "Desc1?", listOf("A","B"), "start1", "end1", "ACTIVE", true)
+        val mockElectionList = listOf(electionDto1)
+        val mockListResponse = ElectionListResponse(mockElectionList)
+        val mockSuccessResponse: Response<ElectionListResponse> = Response.success(mockListResponse)
+
+        // Expect call with the specific voterId
+        coEvery { mockApiService.getElections(anonymizedVoterId = testVoterId) } returns mockSuccessResponse
+
+        val result = votingRepository.getElections(testVoterId)
+
+        assertTrue(result.isSuccess)
+        assertEquals(mockElectionList, result.getOrNull())
+    }
+
+
+    @Test
+    fun `getElections HTTP error returns Result_failure (no voterId)`() = runTest {
         val errorResponseBody = "{\"error\":\"Cannot fetch\"}".toResponseBody(mockk())
         val mockErrorResponse: Response<ElectionListResponse> = Response.error(500, errorResponseBody)
 
-        coEvery { mockApiService.getElections() } returns mockErrorResponse
+        coEvery { mockApiService.getElections(null) } returns mockErrorResponse
 
-        val result = votingRepository.getElections()
+        val result = votingRepository.getElections(null)
 
         assertTrue(result.isFailure)
         val exception = result.exceptionOrNull()
@@ -108,11 +127,11 @@ class VotingRepositoryTest {
     }
 
     @Test
-    fun `getElections network IOException returns Result_failure`() = runTest {
+    fun `getElections network IOException returns Result_failure (no voterId)`() = runTest {
         val ioException = IOException("Network unavailable")
-        coEvery { mockApiService.getElections() } throws ioException
+        coEvery { mockApiService.getElections(null) } throws ioException
 
-        val result = votingRepository.getElections()
+        val result = votingRepository.getElections(null)
 
         assertTrue(result.isFailure)
         val exception = result.exceptionOrNull()

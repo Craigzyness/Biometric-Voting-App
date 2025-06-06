@@ -38,10 +38,10 @@ class VotingRepository(private val apiService: ApiService) {
         }
     }
 
-    suspend fun getElections(): Result<List<ElectionDto>> { // Return type changed to List<ElectionDto>
+    suspend fun getElections(anonymizedVoterId: String?): Result<List<ElectionDto>> {
         return withContext(Dispatchers.IO) {
             try {
-                val response = apiService.getElections() // This now returns Response<ElectionListResponse>
+                val response = apiService.getElections(anonymizedVoterId = anonymizedVoterId) // Pass the ID
                 if (response.isSuccessful && response.body() != null) {
                     Result.success(response.body()!!.elections) // Extract the list from the wrapper
                 } else {
