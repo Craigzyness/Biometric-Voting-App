@@ -4,10 +4,10 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
-import com.example.biometricvotingapp.data.network.ApiService
+// Removed ApiService import as it's not directly used
 import com.example.biometricvotingapp.data.network.dto.VoteRequest
 import com.example.biometricvotingapp.data.repository.VotingRepository
+import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper // Import the new mapper
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -15,6 +15,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import android.util.Base64 // For Base64 encoding
+import androidx.biometric.BiometricPrompt // For CryptoObject type, and error codes
+import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
+import com.example.biometricvotingapp.utils.SecurityUtil // For Crypto operations
+
 
 // Define UI States for VotingScreen
 sealed interface VotingUiState {
@@ -25,11 +30,6 @@ sealed interface VotingUiState {
     data class Error(val message: String) : VotingUiState
 }
 
-import android.util.Base64 // For Base64 encoding
-import androidx.biometric.BiometricPrompt // For CryptoObject type, and error codes
-import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
-import com.example.biometricvotingapp.utils.SecurityUtil // For Crypto operations
-
 // Define one-time events
 sealed interface VotingViewEvent {
     data class ShowBiometricPrompt(val cryptoObject: BiometricPrompt.CryptoObject) : VotingViewEvent // Now carries CryptoObject
@@ -38,7 +38,7 @@ sealed interface VotingViewEvent {
 
 
 class VotingViewModel(
-    private val application: Application,
+    private val application: Application, // Keep application if SecurityUtil or other utils might need it.
     private val votingRepository: VotingRepository // Injected
 ) : ViewModel() {
 
@@ -136,25 +136,15 @@ class VotingViewModel(
     }
 
     fun onBiometricAuthenticationError(errorCode: Int, errString: CharSequence) {
-        val specificMessage = when (errorCode) {
-            BiometricPrompt.ERROR_HW_UNAVAILABLE, BiometricPrompt.ERROR_HW_NOT_PRESENT ->
-                "Biometric hardware not available or not detected. Please check your device."
-            BiometricPrompt.ERROR_NO_BIOMETRICS ->
-                "No biometrics enrolled. Please add a fingerprint in your device settings to confirm your vote."
-            BiometricPrompt.ERROR_LOCKOUT ->
-                "Too many attempts. Biometric authentication is temporarily locked for voting."
-            BiometricPrompt.ERROR_LOCKOUT_PERMANENT ->
-                "Too many attempts. Biometric authentication is permanently locked for voting. You may need to reconfigure device security."
-            BiometricPrompt.ERROR_USER_CANCELED, BiometricPrompt.ERROR_NEGATIVE_BUTTON ->
-                "Vote confirmation cancelled."
-            else -> "Vote confirmation error: $errString (Code: $errorCode)"
-        }
-        if (BuildConfig.DEBUG) Log.e("VotingViewModel", "Biometric Auth Error $errorCode: $errString. Mapped to: $specificMessage")
-        _uiState.value = VotingUiState.Error(specificMessage)
+        // Use the centralized BiometricErrorMapper
+        val errorMessage = BiometricErrorMapper.mapBiometricErrorCodeToString(errorCode, errString)
+        if (BuildConfig.DEBUG) Log.e("VotingViewModel", "Biometric Auth Error $errorCode: $errString. Mapped to: $errorMessage")
+        _uiState.value = VotingUiState.Error(errorMessage)
     }
 
     fun onBiometricAuthenticationFailed() {
-        val errorMessage = "Vote confirmation failed. Fingerprint not recognized." // Made slightly more user-friendly
+        // This callback means the biometric was valid (e.g. a fingerprint) but not recognized.
+        val errorMessage = "Vote confirmation failed. Fingerprint not recognized."
         if (BuildConfig.DEBUG) Log.w("VotingViewModel", errorMessage)
         _uiState.value = VotingUiState.Error(errorMessage)
     }

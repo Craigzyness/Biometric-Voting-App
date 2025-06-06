@@ -23,6 +23,72 @@ const getTestPool = () => {
 };
 
 /**
+ * Sets up the database schema for tests.
+ * Ensures pgcrypto extension is available and creates tables.
+ * @param {Pool | Client} poolOrClient - The pg Pool or Client object to use for queries.
+ */
+async function setupTestDatabaseSchema(poolOrClient) {
+    console.log('Setting up test database schema...');
+    try {
+        await poolOrClient.query('CREATE EXTENSION IF NOT EXISTS pgcrypto;');
+        console.log('Extension "pgcrypto" checked/created successfully.');
+
+        await poolOrClient.query(`
+            CREATE TABLE IF NOT EXISTS Voters (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                anonymized_voter_id VARCHAR(255) NOT NULL UNIQUE,
+                registration_timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                is_eligible BOOLEAN NOT NULL DEFAULT TRUE,
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        console.log('Table "Voters" checked/created successfully.');
+
+        await poolOrClient.query(`
+            CREATE TABLE IF NOT EXISTS Elections (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                election_code VARCHAR(64) NOT NULL UNIQUE,
+                title VARCHAR(255) NOT NULL,
+                description TEXT,
+                options JSONB NOT NULL,
+                start_timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+                end_timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT check_election_dates CHECK (start_timestamp < end_timestamp)
+            );
+        `);
+        console.log('Table "Elections" checked/created successfully.');
+
+        await poolOrClient.query(`
+            CREATE INDEX IF NOT EXISTS idx_elections_status_start_end ON Elections (status, start_timestamp, end_timestamp);
+        `);
+        console.log('Index "idx_elections_status_start_end" on "Elections" table checked/created successfully.');
+
+        await poolOrClient.query(`
+            CREATE TABLE IF NOT EXISTS Votes (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                voter_id UUID NOT NULL REFERENCES Voters(id),
+                election_id UUID NOT NULL REFERENCES Elections(id),
+                selected_option_value TEXT NOT NULL,
+                encrypted_proof TEXT NULL,
+                iv TEXT NULL,
+                cast_at_timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                is_valid BOOLEAN NOT NULL DEFAULT TRUE,
+                UNIQUE (voter_id, election_id) -- Critical constraint
+            );
+        `);
+        console.log('Table "Votes" checked/created successfully.');
+        console.log('Test database schema setup complete.');
+    } catch (error) {
+        console.error('Error setting up test database schema:', error);
+        throw error; // Re-throw to fail tests if schema setup fails
+    }
+}
+
+/**
  * Clears all relevant tables in the test database.
  * Ensures tests start with a clean slate.
  */
@@ -60,4 +126,5 @@ module.exports = {
     getTestPool,
     clearAllTables,
     closeTestPool,
+    setupTestDatabaseSchema, // Export the new function
 };
