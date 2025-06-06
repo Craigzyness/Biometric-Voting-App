@@ -3,13 +3,17 @@ package com.example.biometricvotingapp.ui.screens.voting
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
+// Removed ViewModelProvider import
 import androidx.lifecycle.viewModelScope
 import com.example.biometricvotingapp.data.network.dto.VoteRequest
-import com.example.biometricvotingapp.data.repository.VotingRepository
-import com.example.biometricvotingapp.domain.repository.AuthRepository // For factory casting
-import com.example.biometricvotingapp.domain.usecase.SubmitVoteUseCase // Import the new use case
+// Removed unused repository imports from ViewModel file scope
+import com.example.biometricvotingapp.domain.usecase.SubmitVoteUseCase
+import com.example.biometricvotingapp.domain.usecase.GetElectionsUseCase
+import com.example.biometricvotingapp.domain.usecase.LoginUserUseCase
 import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper
+import com.example.biometricvotingapp.utils.SecurityUtil
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -20,8 +24,6 @@ import kotlinx.coroutines.launch
 import android.util.Base64
 import androidx.biometric.BiometricPrompt
 import com.example.biometricvotingapp.BuildConfig
-import com.example.biometricvotingapp.utils.SecurityUtil
-
 
 // Define UI States for VotingScreen
 sealed interface VotingUiState {
@@ -38,11 +40,13 @@ sealed interface VotingViewEvent {
     data class VoteSubmissionSuccessAndNavigate(val message: String) : VotingViewEvent
 }
 
-
-class VotingViewModel(
+@HiltViewModel
+class VotingViewModel @Inject constructor(
     private val application: Application,
-    private val votingRepository: VotingRepository, // Keep for other potential uses (e.g. fetching election details if added later)
-    private val submitVoteUseCase: SubmitVoteUseCase // Add the new use case
+    private val getElectionsUseCase: GetElectionsUseCase,
+    private val loginUserUseCase: LoginUserUseCase,
+    private val submitVoteUseCase: SubmitVoteUseCase,
+    private val securityUtil: SecurityUtil
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<VotingUiState>(VotingUiState.Idle)
@@ -51,14 +55,14 @@ class VotingViewModel(
     private val _eventFlow = MutableSharedFlow<VotingViewEvent>()
     val eventFlow: SharedFlow<VotingViewEvent> = _eventFlow.asSharedFlow()
 
-    private var currentVoteArgs: Triple<String, String, String>? = null // anonymizedVoterId, electionId, selectedOption
+    private var currentVoteArgs: Triple<String, String, String>? = null
 
     fun onCastVoteClicked(anonymizedVoterId: String, electionId: String, selectedOption: String) {
-        if (BuildConfig.DEBUG) Log.d("VotingViewModel", "Cast Vote button clicked for election: $electionId, option: $selectedOption")
+        if (BuildConfig.DEBUG) Log.d("VotingViewModel", "Cast Vote button clicked for election: $electionId, option: $selectedOption by voter: ${anonymizedVoterId.take(8)}")
         currentVoteArgs = Triple(anonymizedVoterId, electionId, selectedOption)
         _uiState.value = VotingUiState.AwaitingBiometrics
 
-        val cryptoForPrompt = SecurityUtil.getCryptoObjectForEncryption()
+        val cryptoForPrompt = securityUtil.getCryptoObjectForEncryption()
         if (cryptoForPrompt == null) {
             if (BuildConfig.DEBUG) Log.e("VotingViewModel", "Failed to create CryptoObject for encryption.")
             _uiState.value = VotingUiState.Error("Error preparing secure voting session. Please try again.")
@@ -83,7 +87,7 @@ class VotingViewModel(
 
         currentVoteArgs?.let { args ->
             val voteProofPayload = "Vote for ${args.second} at ${System.currentTimeMillis()}"
-            val encryptionResult = SecurityUtil.encryptData(voteProofPayload, cryptoObjectFromResult)
+            val encryptionResult = securityUtil.encryptData(voteProofPayload, cryptoObjectFromResult)
 
             if (encryptionResult == null) {
                 if (BuildConfig.DEBUG) Log.e("VotingViewModel", "Failed to encrypt vote proof.")
@@ -103,7 +107,6 @@ class VotingViewModel(
                     encryptedProof = encryptedProofString,
                     iv = ivString
                 )
-                // Use the SubmitVoteUseCase
                 val voteResult = submitVoteUseCase(voteRequest)
 
                 voteResult.fold(
@@ -146,20 +149,4 @@ class VotingViewModel(
     }
 }
 
-// ViewModel Factory
-@Suppress("UNCHECKED_CAST")
-class VotingViewModelFactory(
-    private val application: Application,
-    private val votingRepository: VotingRepository // Factory still takes VotingRepository
-    // Add other dependencies like AnonymizedIdGenerator if needed by other UseCases for this VM in future
-) : ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(VotingViewModel::class.java)) {
-            // Create SubmitVoteUseCase, assuming VotingRepository implements AuthRepository
-            val authRepository = votingRepository as AuthRepository
-            val submitVoteUseCase = SubmitVoteUseCase(authRepository)
-            return VotingViewModel(application, votingRepository, submitVoteUseCase) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
-    }
-}
+// ViewModel Factory has been removed as Hilt will manage ViewModel creation.

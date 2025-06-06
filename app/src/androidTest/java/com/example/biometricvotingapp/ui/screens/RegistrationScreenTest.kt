@@ -7,6 +7,8 @@ import com.example.biometricvotingapp.ui.screens.registration.RegistrationUiStat
 import com.example.biometricvotingapp.ui.screens.registration.RegistrationViewModel
 import com.example.biometricvotingapp.ui.screens.registration.RegistrationViewEvent
 import com.example.biometricvotingapp.ui.theme.BiometricVotingAppTheme
+import dagger.hilt.android.testing.HiltAndroidRule
+import dagger.hilt.android.testing.HiltAndroidTest
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
@@ -21,10 +23,14 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
+@HiltAndroidTest
 @RunWith(AndroidJUnit4::class)
 class RegistrationScreenTest {
 
-    @get:Rule
+    @get:Rule(order = 0)
+    var hiltRule = HiltAndroidRule(this)
+
+    @get:Rule(order = 1)
     val composeTestRule = createComposeRule()
 
     private lateinit var mockViewModel: RegistrationViewModel
@@ -35,7 +41,9 @@ class RegistrationScreenTest {
 
     @Before
     fun setUp() {
-        mockViewModel = mockk(relaxed = true) // Relaxed allows to skip mocking all methods
+        // hiltRule.inject() // Not needed here
+
+        mockViewModel = mockk(relaxed = true)
         mockOnNavigateToLogin = mockk(relaxed = true)
         mockOnRegistrationSuccess = mockk(relaxed = true)
 
@@ -60,11 +68,8 @@ class RegistrationScreenTest {
 
     @Test
     fun registrationScreen_displaysKeyElementsCorrectly_whenIdle() {
-        uiStateFlow.value = RegistrationUiState.Idle // Ensure Idle state
+        uiStateFlow.value = RegistrationUiState.Idle
         setScreenContent()
-                )
-            }
-        }
 
         composeTestRule.onNodeWithText("Biometric Voting App").assertIsDisplayed()
         composeTestRule.onNodeWithText("Welcome! Securely register to cast your vote using your fingerprint.", substring = true).assertIsDisplayed()
@@ -82,11 +87,8 @@ class RegistrationScreenTest {
         setScreenContent()
 
         composeTestRule.onNodeWithTag("loadingIndicator", useUnmergedTree = true).assertIsDisplayed()
-        composeTestRule.onNodeWithText("Register with Fingerprint").assertDoesNotExist() // Button text replaced by indicator
+        composeTestRule.onNodeWithText("Register with Fingerprint").assertDoesNotExist()
         composeTestRule.onNodeWithTag("statusMessageText", useUnmergedTree = true).assertTextEquals(loadingMessage)
-        // Check if main button itself is disabled (it should be as its content changes)
-        // This requires finding the button, e.g. by its text when not loading, or adding a testTag to the Button itself.
-        // For now, checking content change is a good indicator.
     }
 
     @Test
@@ -97,7 +99,7 @@ class RegistrationScreenTest {
 
         composeTestRule.onNodeWithTag("statusMessageText", useUnmergedTree = true).assertTextEquals(errorMessage)
         composeTestRule.onNodeWithTag("loadingIndicator", useUnmergedTree = true).assertDoesNotExist()
-        composeTestRule.onNodeWithText("Register with Fingerprint").assertIsDisplayed().assertIsEnabled() // Button should be enabled for retry
+        composeTestRule.onNodeWithText("Register with Fingerprint").assertIsDisplayed().assertIsEnabled()
     }
 
     @Test
@@ -106,7 +108,7 @@ class RegistrationScreenTest {
         uiStateFlow.value = RegistrationUiState.AwaitingBiometrics
         setScreenContent()
 
-        composeTestRule.onNodeWithTag("loadingIndicator", useUnmergedTree = true).assertIsDisplayed() // Same as loading
+        composeTestRule.onNodeWithTag("loadingIndicator", useUnmergedTree = true).assertIsDisplayed()
         composeTestRule.onNodeWithText("Register with Fingerprint").assertDoesNotExist()
         composeTestRule.onNodeWithTag("statusMessageText", useUnmergedTree = true).assertTextEquals(awaitingMessage)
     }
@@ -117,10 +119,8 @@ class RegistrationScreenTest {
         val testGeneratedId = "test-id-123"
         val spiedOnRegistrationSuccess = spyk(mockOnRegistrationSuccess)
 
-        // Set initial state for the screen to be composed
         uiStateFlow.value = RegistrationUiState.Idle
-        // Re-set content with the spied callback if it wasn't already used in setScreenContent()
-        composeTestRule.setContent {
+        composeTestRule.setContent { // Re-set content with spied callback
             BiometricVotingAppTheme {
                 RegistrationScreen(
                     viewModel = mockViewModel,
@@ -130,8 +130,7 @@ class RegistrationScreenTest {
             }
         }
 
-
-        val job = launch { // Simulate event emission from ViewModel
+        val job = launch {
             eventFlow.emit(RegistrationViewEvent.NavigateToElectionList(testGeneratedId))
         }
 

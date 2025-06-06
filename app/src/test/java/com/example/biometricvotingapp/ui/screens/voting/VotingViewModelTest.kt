@@ -7,10 +7,12 @@ import androidx.biometric.BiometricPrompt
 import com.example.biometricvotingapp.data.network.dto.VoteDetailsDto
 import com.example.biometricvotingapp.data.network.dto.VoteRequest
 import com.example.biometricvotingapp.data.network.dto.VoteResponse
-import com.example.biometricvotingapp.data.repository.VotingRepository
-import com.example.biometricvotingapp.domain.usecase.SubmitVoteUseCase // Import the new use case
-import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper // For error mapping test
-import com.example.biometricvotingapp.utils.SecurityUtil
+// Removed VotingRepository import
+import com.example.biometricvotingapp.domain.usecase.SubmitVoteUseCase
+import com.example.biometricvotingapp.domain.usecase.GetElectionsUseCase // Added
+import com.example.biometricvotingapp.domain.usecase.LoginUserUseCase  // Added
+import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper
+import com.example.biometricvotingapp.utils.SecurityUtil // Assuming this is now an injectable class
 import io.mockk.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -33,8 +35,10 @@ class VotingViewModelTest {
 
     private lateinit var viewModel: VotingViewModel
     private lateinit var mockApplication: Application
-    private lateinit var mockVotingRepository: VotingRepository // Keep for now as per refined plan
-    private lateinit var mockSubmitVoteUseCase: SubmitVoteUseCase // Add mock for the use case
+    private lateinit var mockGetElectionsUseCase: GetElectionsUseCase
+    private lateinit var mockLoginUserUseCase: LoginUserUseCase
+    private lateinit var mockSubmitVoteUseCase: SubmitVoteUseCase
+    private lateinit var mockSecurityUtil: SecurityUtil // Assuming SecurityUtil is now an injectable class
     private lateinit var mockAuthResult: BiometricPrompt.AuthenticationResult
     private lateinit var mockCryptoObject: BiometricPrompt.CryptoObject
 
@@ -42,23 +46,29 @@ class VotingViewModelTest {
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         mockApplication = mockk(relaxed = true)
-        mockVotingRepository = mockk(relaxed = true) // Keep for now
-        mockSubmitVoteUseCase = mockk() // Initialize the use case mock
+        mockGetElectionsUseCase = mockk(relaxed = true)
+        mockLoginUserUseCase = mockk(relaxed = true)
+        mockSubmitVoteUseCase = mockk(relaxed = true) // relaxed = true as it returns Result
+        mockSecurityUtil = mockk(relaxed = true)
         mockAuthResult = mockk(relaxed = true)
         mockCryptoObject = mockk<BiometricPrompt.CryptoObject>(relaxed = true)
 
-        mockkObject(SecurityUtil)
-        every { SecurityUtil.getCryptoObjectForEncryption() } returns mockCryptoObject
+        // If SecurityUtil is an injectable class, mock its instance methods
+        every { mockSecurityUtil.getCryptoObjectForEncryption() } returns mockCryptoObject
 
-        // Update ViewModel instantiation
-        viewModel = VotingViewModel(mockApplication, mockVotingRepository, mockSubmitVoteUseCase)
+        viewModel = VotingViewModel(
+            mockApplication,
+            mockGetElectionsUseCase,
+            mockLoginUserUseCase,
+            mockSubmitVoteUseCase,
+            mockSecurityUtil
+        )
     }
 
     @After
     fun tearDown() {
         Dispatchers.resetMain()
-        unmockkObject(SecurityUtil)
-        clearAllMocks() // Clears all mocks including the use case
+        clearAllMocks()
     }
 
     @Test
@@ -67,15 +77,14 @@ class VotingViewModelTest {
     }
 
     @Test
-    fun `onCastVoteClicked when SecurityUtil fails returns Error state and no prompt event`() = runTest(testDispatcher) {
-        every { SecurityUtil.getCryptoObjectForEncryption() } returns null
+    fun `onCastVoteClicked when SecurityUtil getCryptoObjectForEncryption fails returns Error state`() = runTest(testDispatcher) {
+        every { mockSecurityUtil.getCryptoObjectForEncryption() } returns null
 
         val events = mutableListOf<VotingViewEvent>()
         val job = launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.eventFlow.collect { events.add(it) } }
 
         viewModel.onCastVoteClicked("voter1", "election1", "optionA")
         advanceUntilIdle()
-
 
         assertEquals(VotingUiState.Error("Error preparing secure voting session. Please try again."), viewModel.uiState.value)
         assertTrue("Should not emit ShowBiometricPrompt event", events.isEmpty())
@@ -84,16 +93,16 @@ class VotingViewModelTest {
     }
 
     @Test
-    fun `onCastVoteClicked when SecurityUtil succeeds emits ShowBiometricPrompt with CryptoObject`() = runTest(testDispatcher) {
+    fun `onCastVoteClicked when SecurityUtil getCryptoObjectForEncryption succeeds emits ShowBiometricPrompt`() = runTest(testDispatcher) {
+        // mockSecurityUtil.getCryptoObjectForEncryption() already mocked in setUp to return mockCryptoObject
+
         val events = mutableListOf<VotingViewEvent>()
         val job = launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.eventFlow.collect { events.add(it) } }
 
         viewModel.onCastVoteClicked("voter1", "election1", "optionA")
         advanceUntilIdle()
 
-
         assertEquals(VotingUiState.AwaitingBiometrics, viewModel.uiState.value)
-        assertTrue("Events list should not be empty", events.isNotEmpty())
         val event = events.first()
         assertTrue("Event should be ShowBiometricPrompt", event is VotingViewEvent.ShowBiometricPrompt)
         assertEquals(mockCryptoObject, (event as VotingViewEvent.ShowBiometricPrompt).cryptoObject)
@@ -103,8 +112,8 @@ class VotingViewModelTest {
 
     @Test
     fun `onBiometricAuthenticationError uses BiometricErrorMapper and sets Error state`() {
-        viewModel.onCastVoteClicked("voter1", "election1", "optionA") // Set currentVoteArgs
-        runCurrent() // Process ShowBiometricPrompt event if any
+        viewModel.onCastVoteClicked("voter1", "election1", "optionA")
+        runCurrent()
 
         val errorCode = BiometricPrompt.ERROR_HW_UNAVAILABLE
         val errString = "Hardware unavailable"
@@ -147,7 +156,7 @@ class VotingViewModelTest {
         val option = "optionA"
 
         every { mockAuthResult.cryptoObject } returns mockCryptoObject
-        every { SecurityUtil.encryptData(any(), mockCryptoObject) } returns null // Simulate encryption failure
+        every { mockSecurityUtil.encryptData(any(), mockCryptoObject) } returns null // Simulate encryption failure
 
         viewModel.onCastVoteClicked(voterId, electionId, option)
         runCurrent()
@@ -158,16 +167,15 @@ class VotingViewModelTest {
         assertEquals(VotingUiState.Error("Error securing vote. Please try again."), viewModel.uiState.value)
     }
 
-
     @Test
     fun `successful vote submission flow with use case leads to Success state and Navigate event`() = runTest(testDispatcher) {
         val voterId = "voter1"
         val electionId = "election1"
         val option = "optionA"
-        val successMessage = "Vote submitted successfully and recorded anonymously!" // This is the VM's message
+        val vmSuccessMessage = "Vote submitted successfully and recorded anonymously!"
+        val useCaseSuccessMessage = "Vote Cast Successfully from UseCase!" // Different to distinguish
         val mockUseCaseResponseDto = VoteDetailsDto("voteId1", electionId, option, "timestamp")
-        val mockUseCaseResponse = VoteResponse(message = "Vote Cast Successfully!", vote = mockUseCaseResponseDto)
-
+        val mockUseCaseResponse = VoteResponse(message = useCaseSuccessMessage, vote = mockUseCaseResponseDto)
 
         val mockIvBytes = "testIV".toByteArray()
         val mockEncryptedProofBytes = "testEncryptedProof".toByteArray()
@@ -175,10 +183,9 @@ class VotingViewModelTest {
         val expectedEncryptedProofString = Base64.encodeToString(mockEncryptedProofBytes, Base64.NO_WRAP)
 
         every { mockAuthResult.cryptoObject } returns mockCryptoObject
-        every { SecurityUtil.encryptData(any(), mockCryptoObject) } returns Pair(mockIvBytes, mockEncryptedProofBytes)
+        every { mockSecurityUtil.encryptData(any(), mockCryptoObject) } returns Pair(mockIvBytes, mockEncryptedProofBytes)
 
         val voteRequestSlot = slot<VoteRequest>()
-        // Mock the SubmitVoteUseCase
         coEvery { mockSubmitVoteUseCase.invoke(capture(voteRequestSlot)) } returns Result.success(mockUseCaseResponse)
 
         val events = mutableListOf<VotingViewEvent>()
@@ -188,12 +195,11 @@ class VotingViewModelTest {
         viewModel.onBiometricAuthenticationSuccess(mockAuthResult)
         advanceUntilIdle()
 
-        coVerify { mockSubmitVoteUseCase.invoke(any()) } // Verify use case was called
+        coVerify { mockSubmitVoteUseCase.invoke(any()) }
 
         val finalState = viewModel.uiState.value
         assertTrue("UI State should be Success, was $finalState", finalState is VotingUiState.Success)
-        assertEquals(successMessage, (finalState as VotingUiState.Success).message)
-
+        assertEquals(vmSuccessMessage, (finalState as VotingUiState.Success).message) // VM uses its own success message
 
         assertTrue(voteRequestSlot.isCaptured)
         assertEquals(expectedIvString, voteRequestSlot.captured.iv)
@@ -204,11 +210,10 @@ class VotingViewModelTest {
 
         val emittedEvent = events.lastOrNull { it is VotingViewEvent.VoteSubmissionSuccessAndNavigate }
         assertNotNull("Navigate event should be emitted", emittedEvent)
-        assertEquals(successMessage, (emittedEvent as VotingViewEvent.VoteSubmissionSuccessAndNavigate).message)
+        assertEquals(vmSuccessMessage, (emittedEvent as VotingViewEvent.VoteSubmissionSuccessAndNavigate).message)
 
         job.cancel()
     }
-
 
     @Test
     fun `vote submission failure from use case leads to Error state`() = runTest(testDispatcher) {
@@ -220,16 +225,15 @@ class VotingViewModelTest {
         val mockIvBytes = "testIV".toByteArray()
         val mockEncryptedProofBytes = "testEncryptedProof".toByteArray()
         every { mockAuthResult.cryptoObject } returns mockCryptoObject
-        every { SecurityUtil.encryptData(any(), mockCryptoObject) } returns Pair(mockIvBytes, mockEncryptedProofBytes)
+        every { mockSecurityUtil.encryptData(any(), mockCryptoObject) } returns Pair(mockIvBytes, mockEncryptedProofBytes)
 
-        // Mock the SubmitVoteUseCase to return failure
         coEvery { mockSubmitVoteUseCase.invoke(any()) } returns Result.failure(Exception(errorMessage))
 
         viewModel.onCastVoteClicked(voterId, electionId, option)
         viewModel.onBiometricAuthenticationSuccess(mockAuthResult)
         advanceUntilIdle()
 
-        coVerify { mockSubmitVoteUseCase.invoke(any()) } // Verify use case was called
+        coVerify { mockSubmitVoteUseCase.invoke(any()) }
 
         val finalState = viewModel.uiState.value
         assertTrue("UI State should be Error, was $finalState", finalState is VotingUiState.Error)
@@ -238,15 +242,14 @@ class VotingViewModelTest {
 
     @Test
     fun `onBiometricAuthenticationSuccess when currentVoteArgs is null sets Error`() = runTest(testDispatcher) {
-        viewModel.onBiometricAuthenticationSuccess(mockAuthResult) // currentVoteArgs is null
+        viewModel.onBiometricAuthenticationSuccess(mockAuthResult)
         advanceUntilIdle()
 
         val finalState = viewModel.uiState.value
         assertTrue("UI State should be Error, was $finalState", finalState is VotingUiState.Error)
         assertEquals("Error: Vote arguments not found after biometric success.", (finalState as VotingUiState.Error).message)
-        coVerify(exactly = 0) { mockSubmitVoteUseCase.invoke(any()) } // Ensure use case not called
+        coVerify(exactly = 0) { mockSubmitVoteUseCase.invoke(any()) }
     }
-
 
     @Test
     fun `resetStateToIdle sets state to Idle`() {

@@ -4,13 +4,15 @@ import android.app.Application
 import android.util.Log
 import androidx.biometric.BiometricPrompt
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
+// Removed ViewModelProvider import as factory is being removed
 import androidx.lifecycle.viewModelScope
 import com.example.biometricvotingapp.BuildConfig
-import com.example.biometricvotingapp.domain.usecase.LoginUserUseCase // Import the new use case
-import com.example.biometricvotingapp.domain.usecase.UserNotRegisteredException // Import custom exception
-import com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator // Keep for Factory
+import com.example.biometricvotingapp.domain.usecase.LoginUserUseCase
+import com.example.biometricvotingapp.domain.usecase.UserNotRegisteredException
+// Removed AnonymizedIdGenerator import from ViewModel file scope
 import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -21,20 +23,21 @@ import kotlinx.coroutines.launch
 sealed class LoginUiState {
     object Idle : LoginUiState()
     object Loading : LoginUiState()
-    data class Success(val anonymizedId: String) : LoginUiState() // Added Success state
+    data class Success(val anonymizedId: String) : LoginUiState()
     data class Error(val message: String) : LoginUiState()
 }
 
 // --- View Events ---
 sealed class LoginViewEvent {
     object ShowBiometricPrompt : LoginViewEvent()
-    data class NavigateToElectionList(val anonymizedId: String) : LoginViewEvent() // Renamed from NavigateToHome for consistency
-    object NavigateToRegistration : LoginViewEvent() // Added for navigation to registration
+    data class NavigateToElectionList(val anonymizedId: String) : LoginViewEvent()
+    object NavigateToRegistration : LoginViewEvent()
 }
 
-class LoginViewModel(
-    private val application: Application, // Keep application if needed for other things or future use cases
-    private val loginUserUseCase: LoginUserUseCase // Use the injected use case
+@HiltViewModel
+class LoginViewModel @Inject constructor(
+    private val application: Application,
+    private val loginUserUseCase: LoginUserUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)
@@ -53,25 +56,22 @@ class LoginViewModel(
 
     fun onBiometricAuthenticationSuccess(authResult: BiometricPrompt.AuthenticationResult) {
         if (BuildConfig.DEBUG) Log.i("LoginViewModel", "Biometric Auth Succeeded.")
-        // No longer directly using authResult.cryptoObject here for login logic itself
 
-        _uiState.value = LoginUiState.Loading // Show loading while use case runs
+        _uiState.value = LoginUiState.Loading
 
         viewModelScope.launch {
-            val result = loginUserUseCase() // Calling the use case
+            val result = loginUserUseCase()
             result.fold(
                 onSuccess = { loggedInUserId ->
-                    // UseCase now returns Result<String> where success implies non-null ID
                     if (BuildConfig.DEBUG) Log.i("LoginViewModel", "Login UseCase Succeeded. User ID: ${loggedInUserId.take(8)}")
-                    _uiState.value = LoginUiState.Success(loggedInUserId) // Update state
+                    _uiState.value = LoginUiState.Success(loggedInUserId)
                     _eventFlow.emit(LoginViewEvent.NavigateToElectionList(loggedInUserId))
                 },
                 onFailure = { exception ->
                     if (exception is UserNotRegisteredException) {
                         if (BuildConfig.DEBUG) Log.w("LoginViewModel", "Login UseCase indicated user not registered: ${exception.message}")
                         _uiState.value = LoginUiState.Error(exception.message ?: "User not registered. Please register.")
-                        // Optionally, navigate to registration directly or let UI offer the choice
-                        // _eventFlow.emit(LoginViewEvent.NavigateToRegistration) // Uncomment if direct navigation is desired
+                        _eventFlow.emit(LoginViewEvent.NavigateToRegistration)
                     } else {
                         if (BuildConfig.DEBUG) Log.e("LoginViewModel", "Login UseCase Failed: ${exception.message}", exception)
                         _uiState.value = LoginUiState.Error("Login failed: ${exception.message ?: "Unknown error"}")
@@ -103,17 +103,4 @@ class LoginViewModel(
     }
 }
 
-// --- ViewModel Factory ---
-@Suppress("UNCHECKED_CAST")
-class LoginViewModelFactory(
-    private val application: Application,
-    private val anonymizedIdGenerator: AnonymizedIdGenerator // Keep this to construct the UseCase
-) : ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(LoginViewModel::class.java)) {
-            val loginUserUseCase = LoginUserUseCase(anonymizedIdGenerator)
-            return LoginViewModel(application, loginUserUseCase) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
-    }
-}
+// ViewModel Factory has been removed as Hilt will manage ViewModel creation.
