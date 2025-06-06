@@ -52,6 +52,9 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    - name: Run ESLint
+      run: npm run lint
+
     - name: Wait for PostgreSQL to be ready # Optional explicit wait, though health check helps
       run: sleep 10 # Simple sleep, or use a script to poll pg_isready on localhost
 
@@ -69,4 +72,11 @@ jobs:
         # Let's align. The service creates POSTGRES_DB. The app uses DB_NAME_TEST if NODE_ENV=test.
         # So, POSTGRES_DB in service should be same as DB_TEST_NAME env var for the app.
         # It seems DB_TEST_NAME is the env var the app uses, so it's correctly set here.
-```
+
+    - name: Upload coverage reports
+      uses: actions/upload-artifact@v4
+      if: always() # Upload even if tests fail, to see partial coverage
+      with:
+        name: backend-coverage-report-node-${{ matrix.node-version }}
+        path: backend/coverage/ # Path is relative to GITHUB_WORKSPACE (repo root)
+        if-no-files-found: warn # Options: error, warn, ignore

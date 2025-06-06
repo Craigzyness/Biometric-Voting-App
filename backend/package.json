@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "cross-env NODE_ENV=test jest --testTimeout=10000 --detectOpenHandles"
+    "test": "cross-env NODE_ENV=test jest --testTimeout=10000 --detectOpenHandles",
+    "lint": "eslint . --ignore-path .gitignore"
   },
   "dependencies": {
     "express": "^4.17.1",
@@ -19,7 +20,8 @@
   "devDependencies": {
     "jest": "^29.0.0",
     "supertest": "^6.0.0",
-    "cross-env": "^7.0.0"
+    "cross-env": "^7.0.0",
+    "eslint": "^8.56.0"
   },
   "author": "AI Assisted Development",
   "license": "MIT"

@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 3000;
 
 // Configure Winston Logger
 const logger = winston.createLogger({
-    level: process.env.NODE_ENV === 'development' ? 'debug' : 'info',
+    level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'development' ? 'debug' : 'info'), // Allow LOG_LEVEL override
     format: winston.format.combine(
         winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
         winston.format.errors({ stack: true }), // Log stack traces
@@ -29,19 +29,19 @@ const logger = winston.createLogger({
             maxSize: '20m',
             maxFiles: '14d',
             format: winston.format.combine(
-                winston.format.timestamp(), // File logs should always be structured JSON
+                winston.format.timestamp(),
                 winston.format.json()
             )
         }),
         new DailyRotateFile({
             filename: 'logs/combined-%DATE%.log',
-            level: process.env.NODE_ENV === 'development' ? 'debug' : 'info',
+            level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'development' ? 'debug' : 'info'), // Allow LOG_LEVEL override
             datePattern: 'YYYY-MM-DD',
             zippedArchive: true,
             maxSize: '20m',
             maxFiles: '14d',
             format: winston.format.combine(
-                winston.format.timestamp(), // File logs should always be structured JSON
+                winston.format.timestamp(),
                 winston.format.json()
             )
         })
@@ -56,12 +56,37 @@ if (process.env.NODE_ENV === 'development') {
         winston.format.printf(info => `${info.timestamp} ${info.level}: ${info.message}` + (info.stack ? `\n${info.stack}` : ''))
     );
 } else {
-    // For production, use JSON format for console as well
+    // For production, use JSON format for console as well, respecting LOG_LEVEL for the transport
     logger.transports[0].format = winston.format.combine(
         winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
         winston.format.json()
    );
+   logger.transports[0].level = process.env.LOG_LEVEL || 'info';
 }
+
+// Helper function to get a loggable version of an ID
+function getLoggableId(id) {
+  const isProduction = process.env.NODE_ENV === 'production';
+  // Check if current effective log level is verbose enough to show full ID in prod
+  const productionLogLevelIsVerbose = () => {
+    // Use the logger's actual effective level for comparison
+    const currentProdLogLevel = logger.level;
+    const verboseLevels = ['http', 'verbose', 'debug', 'silly'];
+    return verboseLevels.includes(currentProdLogLevel);
+  };
+
+  if (!isProduction || (isProduction && productionLogLevelIsVerbose())) {
+    return id;
+  }
+  // If id is undefined or null, handle that gracefully
+  if (id === undefined || id === null) {
+    return '[ID_NOT_PROVIDED]';
+  }
+  // Ensure id is a string before calling substring
+  const idStr = String(id);
+  return `${idStr.substring(0, 8)}...[REDACTED_FOR_PROD_INFO_LOG]`;
+}
+
 
 // Regex for validations
 const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -75,7 +100,9 @@ app.use(helmet());
 app.use(express.json());
 
 // Request logging middleware (morgan) - will log to console independently of Winston for now
-app.use(morgan('dev'));
+// For production, consider using a format that doesn't log PII or using morgan with winston stream.
+app.use(morgan(process.env.NODE_ENV === 'development' ? 'dev' : 'short'));
+
 
 // Database Configuration from Environment Variables with Defaults
 const DB_HOST = process.env.DB_HOST || 'localhost';
@@ -238,16 +265,16 @@ apiRouter.post('/register', registrationLimiter, async (req, res) => {
 
     // Validation for anonymizedVoterId
     if (!anonymizedVoterId || typeof anonymizedVoterId !== 'string' || anonymizedVoterId.trim() === '') {
-        logger.warn('Invalid registration attempt: Missing or empty anonymizedVoterId', { body: req.body });
+        logger.warn('Invalid registration attempt: Missing or empty anonymizedVoterId.', { body: req.body }); // ID not available or useful here
         return res.status(400).json({ error: "Invalid or missing anonymizedVoterId." });
     }
     const trimmedAnonymizedVoterId = anonymizedVoterId.trim();
     if (trimmedAnonymizedVoterId.length > 255) {
-        logger.warn('Invalid registration attempt: anonymizedVoterId too long', { length: trimmedAnonymizedVoterId.length });
+        logger.warn(`Invalid registration attempt: anonymizedVoterId too long. Length: ${trimmedAnonymizedVoterId.length}, ID: ${getLoggableId(trimmedAnonymizedVoterId)}`);
         return res.status(400).json({ error: "anonymizedVoterId must not exceed 255 characters." });
     }
     if (!sha256HexRegex.test(trimmedAnonymizedVoterId)) {
-        logger.warn('Invalid registration attempt: anonymizedVoterId invalid format', { id: trimmedAnonymizedVoterId });
+        logger.warn(`Invalid registration attempt: anonymizedVoterId invalid format. ID: ${getLoggableId(trimmedAnonymizedVoterId)}`);
         return res.status(400).json({ error: "anonymizedVoterId must be a valid 64-character hex string." });
     }
     const finalNormalizedVoterId = trimmedAnonymizedVoterId.toLowerCase();
@@ -256,7 +283,7 @@ apiRouter.post('/register', registrationLimiter, async (req, res) => {
         // Check if voter already exists
         let result = await pool.query('SELECT * FROM Voters WHERE anonymized_voter_id = $1', [finalNormalizedVoterId]);
         if (result.rows.length > 0) {
-            logger.warn(`Attempt to register existing voter: ${trimmedAnonymizedVoterId}`);
+            logger.warn(`Attempt to register existing voter: ${getLoggableId(finalNormalizedVoterId)}`);
             return res.status(409).json({ error: "This anonymizedVoterId is already registered." });
         }
 
@@ -267,59 +294,59 @@ apiRouter.post('/register', registrationLimiter, async (req, res) => {
         );
         const newVoter = result.rows[0];
 
-        logger.info(`New voter registered: ${newVoter.anonymized_voter_id}`); // This will be lowercase from DB
+        logger.info(`New voter registered: ${getLoggableId(newVoter.anonymized_voter_id)} (DB ID: ${newVoter.id})`);
         res.status(201).json({
             message: "Voter registered successfully.",
             voter: {
                 id: newVoter.id,
-                anonymizedVoterId: newVoter.anonymized_voter_id,
+                anonymizedVoterId: newVoter.anonymized_voter_id, // Return full ID in response
                 registrationTimestamp: newVoter.registration_timestamp,
                 isEligible: newVoter.is_eligible
             }
         });
     } catch (err) {
-        logger.error('Error during /register', { error: err.message, stack: err.stack, detail: err.detail, code: err.code });
+        logger.error('Error during /register', { anonymizedVoterId: getLoggableId(finalNormalizedVoterId), error: err.message, stack: err.stack, detail: err.detail, code: err.code });
         res.status(500).json({ error: "An unexpected error occurred on the server." });
     }
 });
 
 // GET /api/v1/elections
 apiRouter.get('/elections', async (req, res) => {
-    const { anonymizedVoterId } = req.query;
+    const { anonymizedVoterId: queryAnonymizedVoterId } = req.query; // Renamed for clarity
     let internalVoterId = null;
     const votedElectionIds = new Set();
 
-    if (anonymizedVoterId) {
-        if (typeof anonymizedVoterId !== 'string' || anonymizedVoterId.trim() === '') {
+    if (queryAnonymizedVoterId) {
+        if (typeof queryAnonymizedVoterId !== 'string' || queryAnonymizedVoterId.trim() === '') {
             logger.warn('Invalid /elections request: anonymizedVoterId provided but empty or not a string.', { query: req.query });
             return res.status(400).json({ error: "anonymizedVoterId must be a non-empty string if provided." });
         }
-        const trimmedAnonymizedVoterId = anonymizedVoterId.trim();
-        if (trimmedAnonymizedVoterId.length > 255) {
-            logger.warn('Invalid /elections request: anonymizedVoterId too long.', { query: req.query });
+        const trimmedQueryAnonymizedVoterId = queryAnonymizedVoterId.trim();
+        if (trimmedQueryAnonymizedVoterId.length > 255) {
+            logger.warn(`Invalid /elections request: anonymizedVoterId too long. ID: ${getLoggableId(trimmedQueryAnonymizedVoterId)}`);
             return res.status(400).json({ error: "anonymizedVoterId must not exceed 255 characters." });
         }
-        if (!sha256HexRegex.test(trimmedAnonymizedVoterId)) {
-            logger.warn('Invalid /elections request: anonymizedVoterId invalid format.', { query: req.query });
+        if (!sha256HexRegex.test(trimmedQueryAnonymizedVoterId)) {
+            logger.warn(`Invalid /elections request: anonymizedVoterId invalid format. ID: ${getLoggableId(trimmedQueryAnonymizedVoterId)}`);
             return res.status(400).json({ error: "anonymizedVoterId must be a valid 64-character hex string if provided." });
         }
-        const normalizedQueryVoterId = trimmedAnonymizedVoterId.toLowerCase();
+        const normalizedQueryVoterId = trimmedQueryAnonymizedVoterId.toLowerCase();
 
         try {
             const voterResult = await pool.query('SELECT id FROM Voters WHERE anonymized_voter_id = $1', [normalizedQueryVoterId]);
             if (voterResult.rows.length > 0) {
                 internalVoterId = voterResult.rows[0].id;
-                logger.debug(`Fetching votes for voterId: ${internalVoterId} for /elections endpoint.`);
+                logger.debug(`Fetching votes for voterId (DB ID): ${internalVoterId} (anonymized: ${getLoggableId(normalizedQueryVoterId)}) for /elections endpoint.`);
                 const votesResult = await pool.query('SELECT election_id FROM Votes WHERE voter_id = $1', [internalVoterId]);
                 votesResult.rows.forEach(row => votedElectionIds.add(row.election_id));
-                logger.debug(`Voter ${internalVoterId} has voted in ${votedElectionIds.size} elections.`);
+                logger.debug(`Voter (DB ID): ${internalVoterId} has voted in ${votedElectionIds.size} elections.`);
             } else {
-                logger.info(`No voter found for anonymizedVoterId: ${trimmedAnonymizedVoterId} in /elections query.`);
+                logger.info(`No voter found for anonymizedVoterId: ${getLoggableId(normalizedQueryVoterId)} in /elections query.`);
             }
         } catch (err) {
-            logger.error('Error fetching voter or votes status for /elections (non-critical for election listing)', { error: err.message, stack: err.stack, query: req.query });
-            internalVoterId = null;
-            votedElectionIds.clear();
+            logger.error('Error fetching voter or votes status for /elections (non-critical for election listing)', { anonymizedVoterId: getLoggableId(normalizedQueryVoterId), error: err.message, stack: err.stack });
+            internalVoterId = null; // Reset on error
+            votedElectionIds.clear(); // Reset on error
         }
     }
 
@@ -347,7 +374,7 @@ apiRouter.get('/elections', async (req, res) => {
             status: election.status,
             hasVoted: internalVoterId ? votedElectionIds.has(election.id) : false,
         }));
-        logger.info(`Returning ${electionsForApi.length} active elections.`);
+        logger.info(`Returning ${electionsForApi.length} active elections. Requested by: ${queryAnonymizedVoterId ? getLoggableId(queryAnonymizedVoterId) : 'anonymous'}`);
         res.status(200).json({ elections: electionsForApi });
     } catch (err) {
         logger.error('Error during /elections main query', { error: err.message, stack: err.stack, detail: err.detail, code: err.code });
@@ -359,10 +386,10 @@ apiRouter.get('/elections', async (req, res) => {
 // Apply specific stricter limiter for vote submission
 apiRouter.post('/submitVote', voteSubmissionLimiter, async (req, res) => {
     const { anonymizedVoterId, electionId, selectedOption, encryptedProof, iv } = req.body;
+    let loggableVoterId = '[ID_NOT_VALID_YET]'; // Placeholder for logging before full validation
 
     // --- Input Validation ---
     const errors = [];
-    // (Validation logic as implemented previously)
     let finalAnonymizedVoterId = '';
     if (!anonymizedVoterId || typeof anonymizedVoterId !== 'string' || anonymizedVoterId.trim() === '') {
         errors.push("anonymizedVoterId is required and must be a non-empty string.");
@@ -370,10 +397,15 @@ apiRouter.post('/submitVote', voteSubmissionLimiter, async (req, res) => {
         const trimmedVoterId = anonymizedVoterId.trim();
         if (trimmedVoterId.length > 255) { errors.push("anonymizedVoterId must not exceed 255 characters."); }
         if (!sha256HexRegex.test(trimmedVoterId)) { errors.push("anonymizedVoterId must be a valid 64-character hex string."); }
-        else { finalAnonymizedVoterId = trimmedVoterId.toLowerCase(); } // Normalize here after format validation
+        else {
+            finalAnonymizedVoterId = trimmedVoterId.toLowerCase(); // Normalize here after format validation
+            loggableVoterId = getLoggableId(finalAnonymizedVoterId); // Update for logging
+        }
     }
 
     let finalElectionId = '';
+    if (!electionId || typeof electionId !== 'string' || electionId.trim() === '') { // Added check for empty string
+        errors.push("electionId is required and must be a non-empty string.");
     } else {
         finalElectionId = electionId.trim(); // Trimmed for UUID test
         if (!uuidRegex.test(finalElectionId)) { errors.push("electionId must be a valid UUID."); }
@@ -403,52 +435,44 @@ apiRouter.post('/submitVote', voteSubmissionLimiter, async (req, res) => {
     if (proofIsNonEmptyString !== ivIsNonEmptyString) { errors.push("encryptedProof and iv must be provided together as non-empty strings, or not at all."); }
 
     if (errors.length > 0) {
-        logger.warn('Invalid vote submission request', { errors: errors, body: req.body });
+        logger.warn(`Invalid vote submission request for voter: ${loggableVoterId}, election: ${finalElectionId || '[ELECTION_ID_INVALID]'}`, { errors: errors, body: req.body });
         return res.status(400).json({ error: errors.join(" ") });
     }
     // --- End of Input Validation ---
 
-    // Use already normalized/trimmed values if they passed validation, or original if not applicable for normalization step above
-    // finalAnonymizedVoterId is already normalized if it passed validation
-    // finalElectionId is already trimmed if it passed validation
-    // finalSelectedOption is already trimmed if it passed validation
     const finalEncryptedProof = proofIsNonEmptyString ? encryptedProof.trim() : null;
     const finalIv = ivIsNonEmptyString ? iv.trim() : null;
 
     try {
-        // 1. Get internal voter_id and check eligibility
-        // Use finalAnonymizedVoterId which is now lowercase
         const voterResult = await pool.query('SELECT id, is_eligible FROM Voters WHERE anonymized_voter_id = $1', [finalAnonymizedVoterId]);
         if (voterResult.rows.length === 0) {
-            logger.warn(`Vote attempt by unregistered voter: ${finalAnonymizedVoterId}`);
+            logger.warn(`Vote attempt by unregistered voter: ${loggableVoterId}`);
             return res.status(403).json({ error: "Voter not registered." });
         }
         const voter = voterResult.rows[0];
         if (!voter.is_eligible) {
-            logger.warn(`Vote attempt by ineligible voter: ${finalAnonymizedVoterId} (DB ID: ${voter.id})`);
+            logger.warn(`Vote attempt by ineligible voter: ${loggableVoterId} (DB ID: ${voter.id})`);
             return res.status(403).json({ error: "Voter is not eligible to vote." });
         }
         const internalVoterId = voter.id;
 
-        // 2. Get election details and check if active and option is valid
         const electionResult = await pool.query('SELECT id, options, start_timestamp, end_timestamp, status FROM Elections WHERE id = $1', [finalElectionId]);
         if (electionResult.rows.length === 0) {
-            logger.warn(`Vote attempt for non-existent election: ${finalElectionId}`);
+            logger.warn(`Vote attempt for non-existent election: ${finalElectionId} by voter: ${loggableVoterId}`);
             return res.status(404).json({ error: "Election not found." });
         }
         const election = electionResult.rows[0];
         const now = new Date();
         if (now < election.start_timestamp || now > election.end_timestamp || election.status !== 'ACTIVE') {
-            logger.warn(`Vote attempt for inactive/non-open election: ${finalElectionId} by voter ${finalAnonymizedVoterId}`);
+            logger.warn(`Vote attempt for inactive/non-open election: ${finalElectionId} by voter ${loggableVoterId}. Current status: ${election.status}, Start: ${election.start_timestamp}, End: ${election.end_timestamp}`);
             return res.status(403).json({ error: "Election is not currently active or open for voting." });
         }
         if (!Array.isArray(election.options) || !election.options.includes(finalSelectedOption)) {
-            logger.warn(`Vote attempt with invalid option "${finalSelectedOption}" for election ${finalElectionId} by voter ${finalAnonymizedVoterId}`);
+            logger.warn(`Vote attempt with invalid option "${finalSelectedOption}" for election ${finalElectionId} by voter ${loggableVoterId}`);
             return res.status(400).json({ error: "Invalid option selected for this election." });
         }
         const internalElectionId = election.id;
 
-        // 3. Attempt to insert vote (double voting check by DB unique constraint)
         try {
             const voteInsertResult = await pool.query(
                 'INSERT INTO Votes (voter_id, election_id, selected_option_value, encrypted_proof, iv) VALUES ($1, $2, $3, $4, $5) RETURNING id, election_id, selected_option_value, cast_at_timestamp',
@@ -458,15 +482,18 @@ apiRouter.post('/submitVote', voteSubmissionLimiter, async (req, res) => {
 
             const logDataForBlockchain = {
                 voteId: newVote.id,
-                anonymizedVoterId: finalAnonymizedVoterId,
+                anonymizedVoterId: loggableVoterId, // Use loggable version
                 electionId: newVote.election_id,
-                selectedOption: newVote.selected_option_value,
+                selectedOption: newVote.selected_option_value, // Option itself is not PII
                 castAtTimestamp: newVote.cast_at_timestamp,
             };
+            // Log full ID for blockchain simulation at debug, otherwise loggable version for info
+            logger.debug(`Full data for blockchain simulation: ${JSON.stringify({ ...logDataForBlockchain, anonymizedVoterId: finalAnonymizedVoterId })}`);
             logger.info(`SIMULATING BLOCKCHAIN RECORD (Append-Only Log Entry): ${JSON.stringify(logDataForBlockchain)}`);
 
+
             res.status(201).json({
-                message: "Vote submitted successfully and recorded anonymously!", // Updated message
+                message: "Vote submitted successfully and recorded anonymously!",
                 vote: {
                     voteId: newVote.id,
                     electionId: newVote.election_id,
@@ -476,13 +503,13 @@ apiRouter.post('/submitVote', voteSubmissionLimiter, async (req, res) => {
             });
         } catch (dbErr) {
             if (dbErr.code === '23505') { // Unique violation (double voting)
-                logger.warn(`Double voting attempt by voter ${finalAnonymizedVoterId} (DB ID: ${internalVoterId}) for election ${finalElectionId}`);
+                logger.warn(`Double voting attempt by voter ${loggableVoterId} (DB ID: ${internalVoterId}) for election ${finalElectionId}`);
                 return res.status(409).json({ error: "Already voted in this election." });
             }
-            throw dbErr;
+            throw dbErr; // Re-throw other DB errors
         }
     } catch (err) {
-        logger.error('Error during /submitVote', { error: err.message, stack: err.stack, detail: err.detail, code: err.code });
+        logger.error('Error during /submitVote', { anonymizedVoterId: loggableVoterId, electionId: finalElectionId, error: err.message, stack: err.stack, detail: err.detail, code: err.code });
         res.status(500).json({ error: "An unexpected error occurred on the server." });
     }
 });
