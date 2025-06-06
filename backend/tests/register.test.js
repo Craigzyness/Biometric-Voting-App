@@ -1,16 +1,18 @@
 const request = require('supertest');
 const { app, pool } = require('../server'); // Import app and pool for potential direct DB checks if needed & closing pool
-const { clearAllTables, closeTestPool, getTestPool } = require('./db_test_helper');
+// Import setupTestDatabaseSchema from db_test_helper
+const { clearAllTables, closeTestPool, getTestPool, setupTestDatabaseSchema } = require('./db_test_helper');
 
 describe('/api/v1/register', () => {
-    // No specific one-time setup needed beyond what server.js does for test env
-    // beforeAll(async () => { });
+    let dbPool; // Declare dbPool here
+
+    beforeAll(async () => { // Make beforeAll async
+        dbPool = getTestPool(); // Get the test pool instance
+        await setupTestDatabaseSchema(dbPool); // Setup schema
+    });
 
     beforeEach(async () => {
-        // Ensure the main app's pool (which points to test DB in NODE_ENV=test) has initialized the schema
-        // This relies on server.js's initializeDatabase() having run or being callable for test DB.
-        // For now, we assume initializeDatabase in server.js handles the test DB schema.
-        // Then clear tables using the test helper's dedicated pool.
+        // Clear data, but schema is already set up
         await clearAllTables();
     });
 
@@ -38,7 +40,7 @@ describe('/api/v1/register', () => {
         expect(response.body.voter).toHaveProperty('registrationTimestamp'); // ISO String
 
         // Optional: Verify in DB directly using getTestPool()
-        const dbPool = getTestPool();
+        // dbPool is already available from beforeAll
         const dbResult = await dbPool.query('SELECT * FROM "Voters" WHERE anonymized_voter_id = $1', [anonymizedVoterId]);
         expect(dbResult.rows.length).toBe(1);
         expect(dbResult.rows[0].anonymized_voter_id).toBe(anonymizedVoterId);

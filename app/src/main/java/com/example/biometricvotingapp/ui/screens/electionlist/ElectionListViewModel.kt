@@ -3,12 +3,13 @@ package com.example.biometricvotingapp.ui.screens.electionlist
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
-import com.example.biometricvotingapp.data.network.ApiService
-import com.example.biometricvotingapp.data.network.dto.ElectionDto
-import com.example.biometricvotingapp.data.repository.VotingRepository
-import com.example.biometricvotingapp.domain.model.Election // Assuming this is your domain model
+import com.example.biometricvotingapp.BuildConfig
+import com.example.biometricvotingapp.data.repository.VotingRepository // Keep for Factory
+import com.example.biometricvotingapp.domain.model.Election
+import com.example.biometricvotingapp.domain.usecase.GetElectionsUseCase // Import the new use case
+import com.example.biometricvotingapp.domain.repository.AuthRepository // For Factory casting, as UseCase expects AuthRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,8 +25,8 @@ sealed interface ElectionListUiState {
 
 class ElectionListViewModel(
     private val application: Application,
-    private val votingRepository: VotingRepository,
-    private val anonymizedVoterId: String? // Add anonymizedVoterId
+    private val getElectionsUseCase: GetElectionsUseCase,
+    private val anonymizedVoterId: String?
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<ElectionListUiState>(ElectionListUiState.Loading)
@@ -38,38 +39,44 @@ class ElectionListViewModel(
     fun loadElections() {
         viewModelScope.launch {
             _uiState.value = ElectionListUiState.Loading
-            if (BuildConfig.DEBUG) Log.d("ElectionListViewModel", "Fetching elections for voter ID: $anonymizedVoterId")
-            val result = votingRepository.getElections(anonymizedVoterId = anonymizedVoterId) // Pass the ID
+            if (BuildConfig.DEBUG) Log.d("ElectionListViewModel", "Fetching elections via UseCase for voter ID: $anonymizedVoterId")
+
+            val result = getElectionsUseCase(anonymizedVoterId)
+
             result.fold(
-                onSuccess = { electionDtoList ->
-                    if (BuildConfig.DEBUG) Log.d("ElectionListViewModel", "Fetched ${electionDtoList.size} elections DTOs for voter ID: $anonymizedVoterId.")
-                    if (electionDtoList.isEmpty()) {
+                onSuccess = { domainElections ->
+                    if (BuildConfig.DEBUG) Log.d("ElectionListViewModel", "Fetched ${domainElections.size} domain elections for voter ID: $anonymizedVoterId.")
+                    if (domainElections.isEmpty()) {
                         _uiState.value = ElectionListUiState.Empty
                     } else {
-                        val domainElections = electionDtoList.map { mapDtoToDomain(it) }
                         _uiState.value = ElectionListUiState.Success(domainElections)
                     }
                 },
                 onFailure = { error ->
                     val errorMessage = error.message ?: "An unknown error occurred while fetching elections."
-                    if (BuildConfig.DEBUG) Log.e("ElectionListViewModel", "Error fetching elections: $errorMessage")
+                    if (BuildConfig.DEBUG) Log.e("ElectionListViewModel", "Error fetching elections via UseCase: $errorMessage")
                     _uiState.value = ElectionListUiState.Error(errorMessage)
                 }
             )
         }
     }
+}
 
-    // Mapper function from ElectionDto (network) to Election (domain)
-    private fun mapDtoToDomain(dto: ElectionDto): Election {
-        return Election(
-            id = dto.id,
-            title = dto.title,
-            description = dto.description ?: "",
-            options = dto.options,
-            hasVoted = dto.hasVoted ?: false // Map hasVoted, default to false if null
-            // Note: ElectionDto has more fields (electionCode, status, timestamps)
-            // which are not currently in the Election domain model.
-            // If needed, the Election domain model should be updated for those too.
-        )
+// ViewModel Factory
+@Suppress("UNCHECKED_CAST")
+class ElectionListViewModelFactory(
+    private val application: Application,
+    private val votingRepository: VotingRepository, // Factory still takes VotingRepository
+    private val anonymizedVoterId: String?
+) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(ElectionListViewModel::class.java)) {
+            // Create GetElectionsUseCase, assuming VotingRepository implements AuthRepository
+            // The GetElectionsUseCase now expects AuthRepository as per the prompt's definition for it.
+            val authRepository = votingRepository as AuthRepository
+            val getElectionsUseCase = GetElectionsUseCase(authRepository)
+            return ElectionListViewModel(application, getElectionsUseCase, anonymizedVoterId) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class: ${modelClass.name}")
     }
 }

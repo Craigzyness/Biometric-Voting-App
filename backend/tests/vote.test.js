@@ -1,6 +1,7 @@
 const request = require('supertest');
 const { app, pool } = require('../server'); // Import app and main pool
-const { clearAllTables, closeTestPool, getTestPool } = require('./db_test_helper');
+// Import setupTestDatabaseSchema from db_test_helper
+const { clearAllTables, closeTestPool, getTestPool, setupTestDatabaseSchema } = require('./db_test_helper');
 
 // Helper function to seed election data
 async function seedElection(dbPool, electionData) {
@@ -32,11 +33,13 @@ async function seedVoter(dbPool, voterData) {
 describe('/api/v1/submitVote', () => {
     let dbPool;
 
-    beforeAll(() => {
+    beforeAll(async () => { // Make beforeAll async
         dbPool = getTestPool();
+        await setupTestDatabaseSchema(dbPool); // Setup schema
     });
 
     beforeEach(async () => {
+        // Clear data, but schema is already set up
         await clearAllTables();
     });
 
