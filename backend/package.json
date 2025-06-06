@@ -1,0 +1,14 @@
+{
+  "name": "biometric-voting-app-backend",
+  "version": "0.1.0",
+  "description": "Placeholder backend for Biometric Voting App MVP",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.17.1"
+  },
+  "author": "AI Assisted Development",
+  "license": "MIT"
+}
