@@ -1,0 +1,51 @@
+{% extends 'admin/master.html' %}
+{% block body %}
+  <h1>Blockchain Elections</h1>
+  <p><a href="{{ url_for('.create_view') }}" class="btn btn-primary">Create New Election on Blockchain</a></p>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+  <table class="table table-striped table-bordered">
+    <thead>
+      <tr>
+        <th>ID (On-Chain)</th>
+        <th>Title</th>
+        <th>Description</th>
+        <th>Options</th>
+        <th>Active?</th>
+        <th>Vote Counts</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for election in elections %}
+      <tr>
+        <td>{{ election.id }}</td>
+        <td>{{ election.title }}</td>
+        <td>{{ election.description }}</td>
+        <td>
+          <ul>
+          {% for option in election.options %}
+            <li>{{ option.text }} (id: {{ option.id }})</li>
+          {% endfor %}
+          </ul>
+        </td>
+        <td>{{ election.isActive }}</td>
+        <td>{{ election.vote_counts_str }}</td>
+        <td>
+          <form action="{{ url_for('.toggle_status_view', election_id=election.id) }}" method="POST" style="display:inline;">
+            <button type="submit" class="btn btn-xs btn-warning">Toggle Active Status (Placeholder)</button>
+          </form>
+          <!-- Edit/Delete for on-chain polls are complex and not fully implemented here -->
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">No elections found on the blockchain.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
