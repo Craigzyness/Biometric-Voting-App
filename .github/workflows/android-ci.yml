@@ -33,12 +33,6 @@ jobs:
         distribution: 'temurin' # Popular OpenJDK distribution
         cache: 'gradle' # Enable caching for Gradle
 
-    # Optional: Set up Android SDK using a dedicated action if more control is needed
-    # For basic builds and unit tests, often JDK + Gradle setup is enough if AGP handles SDK download.
-    # However, to be explicit or for emulator tests later:
-    # - name: Set up Android SDK
-    #   uses: android-actions/setup-android@v3 # Using v3 as an example
-
     - name: Grant execute permissions for gradlew
       run: chmod +x ./gradlew
 
@@ -50,6 +44,15 @@ jobs:
 
     - name: Run Android Lint
       run: ./gradlew :app:lintDebug
+
+    - name: Run Instrumented Tests (connectedAndroidTest)
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: 30 # Choose an API level compatible with your app and tests
+        script: ./gradlew :app:connectedDebugAndroidTest
+        # Optional: You can specify other emulator options like target, arch, etc.
+        # target: "google_apis" # Example: "default" or "google_apis" or "aosp_atd"
+        # arch: "x86_64" # Example
 
     # --- Release Build Steps (Conceptual: Requires Secrets) ---
     - name: Decode Keystore and Create keystore.properties (Release)
@@ -99,4 +102,10 @@ jobs:
     #   with:
     #     name: unit-test-reports
     #     path: app/build/reports/tests/testDebugUnitTest/
-```
+    # - name: Upload Instrumented Test results
+    #   if: always() # Run this step even if previous steps fail, to upload results
+    #   uses: actions/upload-artifact@v4
+    #   with:
+    #     name: instrumented-test-reports
+    #     path: app/build/reports/androidTests/connected/
+    #     if-no-files-found: ignore

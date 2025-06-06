@@ -10,7 +10,11 @@
   "dependencies": {
     "express": "^4.17.1",
     "pg": "^8.7.1",
-    "helmet": "^7.0.0"
+    "helmet": "^7.0.0",
+    "morgan": "^1.10.0",
+    "express-rate-limit": "^7.1.5",
+    "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^4.7.1"
   },
   "devDependencies": {
     "jest": "^29.0.0",
