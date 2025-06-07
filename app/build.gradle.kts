@@ -2,8 +2,17 @@
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.kotlinAndroid)
-    id("com.google.gms.google-services") version "4.4.1" // Apply directly with version
-    id("com.google.firebase.crashlytics") version "2.9.9" // Apply directly with version
+    id("kotlin-kapt") // Added kotlin-kapt for Hilt
+    alias(libs.plugins.hilt) // Added Hilt plugin
+    id("com.google.gms.google-services") version "4.4.1"
+    id("com.google.firebase.crashlytics") version "2.9.9"
+}
+
+// Define keystore properties file
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = java.util.Properties()
+if (keystorePropertiesFile.exists() && keystorePropertiesFile.isFile) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
 }
 
 // Define keystore properties file
@@ -114,6 +123,11 @@ android {
             isIncludeAndroidResources = true
         }
     }
+    // Required for Hilt to work with Kotlin 1.9.0+ and KSP (if used, not used here yet)
+    // or for kapt
+    kapt {
+        correctErrorTypes = true
+    }
 }
 
 dependencies {
@@ -129,6 +143,10 @@ dependencies {
     implementation(libs.androidx.security.crypto)
     implementation(libs.accompanist.permissions)
     implementation(libs.timber)
+
+    // Hilt Dependencies
+    implementation(libs.hilt.android)
+    kapt(libs.hilt.compiler)
 
     // Firebase - Bill of Materials (BOM)
     implementation(platform("com.google.firebase:firebase-bom:32.8.0"))

@@ -3,11 +3,22 @@ package com.example.biometricvotingapp.ui.screens.voting
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.ViewModel
+// Removed ViewModelProvider import
 import androidx.lifecycle.viewModelScope
+import com.example.biometricvotingapp.data.network.dto.VoteRequest
+// Removed unused repository imports
+import com.example.biometricvotingapp.domain.usecase.SubmitVoteUseCase
+import com.example.biometricvotingapp.domain.usecase.GetElectionsUseCase
+import com.example.biometricvotingapp.domain.usecase.LoginUserUseCase
+import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper
+import com.example.biometricvotingapp.utils.SecurityUtil
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 // Removed ApiService import as it's not directly used
 import com.example.biometricvotingapp.data.network.dto.VoteRequest
 import com.example.biometricvotingapp.data.repository.VotingRepository
 import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper // Import the new mapper
+Biometric-Voting-App
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -15,31 +26,43 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import android.util.Base64
+import androidx.biometric.BiometricPrompt
+import com.example.biometricvotingapp.BuildConfig
 import android.util.Base64 // For Base64 encoding
 import androidx.biometric.BiometricPrompt // For CryptoObject type, and error codes
 import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
 import com.example.biometricvotingapp.utils.SecurityUtil // For Crypto operations
 
+Biometric-Voting-App
 
 // Define UI States for VotingScreen
 sealed interface VotingUiState {
-    object Idle : VotingUiState // Default state, or after an action is reset
-    object AwaitingBiometrics : VotingUiState // Waiting for user to interact with biometric prompt
-    object Loading : VotingUiState // Submitting vote to backend
+    object Idle : VotingUiState
+    object AwaitingBiometrics : VotingUiState
+    object Loading : VotingUiState
     data class Success(val message: String) : VotingUiState
     data class Error(val message: String) : VotingUiState
 }
 
 // Define one-time events
 sealed interface VotingViewEvent {
-    data class ShowBiometricPrompt(val cryptoObject: BiometricPrompt.CryptoObject) : VotingViewEvent // Now carries CryptoObject
+    data class ShowBiometricPrompt(val cryptoObject: BiometricPrompt.CryptoObject) : VotingViewEvent
     data class VoteSubmissionSuccessAndNavigate(val message: String) : VotingViewEvent
 }
 
+@HiltViewModel
+class VotingViewModel @Inject constructor(
+    private val application: Application,
+    private val getElectionsUseCase: GetElectionsUseCase,
+    private val loginUserUseCase: LoginUserUseCase,
+    private val submitVoteUseCase: SubmitVoteUseCase,
+    private val securityUtil: SecurityUtil
 
 class VotingViewModel(
     private val application: Application, // Keep application if SecurityUtil or other utils might need it.
     private val votingRepository: VotingRepository // Injected
+Biometric-Voting-App
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<VotingUiState>(VotingUiState.Idle)
@@ -48,19 +71,14 @@ class VotingViewModel(
     private val _eventFlow = MutableSharedFlow<VotingViewEvent>()
     val eventFlow: SharedFlow<VotingViewEvent> = _eventFlow.asSharedFlow()
 
-    private var currentVoteArgs: Triple<String, String, String>? = null // anonymizedVoterId, electionId, selectedOption
+    private var currentVoteArgs: Triple<String, String, String>? = null
 
-    /**
-     * Called when the user clicks the main button to initiate voting.
-     * Stores arguments and triggers biometric prompt.
-     */
     fun onCastVoteClicked(anonymizedVoterId: String, electionId: String, selectedOption: String) {
-        if (BuildConfig.DEBUG) Log.d("VotingViewModel", "Cast Vote button clicked for election: $electionId, option: $selectedOption")
+        if (BuildConfig.DEBUG) Log.d("VotingViewModel", "Cast Vote button clicked for election: $electionId, option: $selectedOption by voter: ${anonymizedVoterId.take(8)}")
         currentVoteArgs = Triple(anonymizedVoterId, electionId, selectedOption)
         _uiState.value = VotingUiState.AwaitingBiometrics
 
-        // Attempt to get CryptoObject for encryption
-        val cryptoForPrompt = SecurityUtil.getCryptoObjectForEncryption()
+        val cryptoForPrompt = securityUtil.getCryptoObjectForEncryption()
         if (cryptoForPrompt == null) {
             if (BuildConfig.DEBUG) Log.e("VotingViewModel", "Failed to create CryptoObject for encryption.")
             _uiState.value = VotingUiState.Error("Error preparing secure voting session. Please try again.")
@@ -72,9 +90,6 @@ class VotingViewModel(
         }
     }
 
-    /**
-     * Called by the UI after biometric authentication is successful.
-     */
     fun onBiometricAuthenticationSuccess(authResult: androidx.biometric.BiometricPrompt.AuthenticationResult) {
         if (BuildConfig.DEBUG) Log.d("VotingViewModel", "Biometric authentication successful, proceeding to submit vote.")
         _uiState.value = VotingUiState.Loading
@@ -87,15 +102,13 @@ class VotingViewModel(
         }
 
         currentVoteArgs?.let { args ->
-            // Define a simple payload to encrypt as proof.
-            // Could include parts of the vote itself, like a hash of (electionId + option + timestamp)
             val voteProofPayload = "Vote for ${args.second} at ${System.currentTimeMillis()}"
-            val encryptionResult = SecurityUtil.encryptData(voteProofPayload, cryptoObjectFromResult)
+            val encryptionResult = securityUtil.encryptData(voteProofPayload, cryptoObjectFromResult)
 
             if (encryptionResult == null) {
                 if (BuildConfig.DEBUG) Log.e("VotingViewModel", "Failed to encrypt vote proof.")
                 _uiState.value = VotingUiState.Error("Error securing vote. Please try again.")
-                return@let // Exit let block
+                return@let
             }
 
             val (ivBytes, encryptedProofBytes) = encryptionResult
@@ -110,20 +123,20 @@ class VotingViewModel(
                     encryptedProof = encryptedProofString,
                     iv = ivString
                 )
-                val voteResult = votingRepository.submitVote(voteRequest)
+                val voteResult = submitVoteUseCase(voteRequest)
+
                 voteResult.fold(
                     onSuccess = { backendResponse ->
-                        // val originalSuccessMessage = backendResponse.message ?: "Vote cast successfully!"
                         val newSuccessMessage = "Vote submitted successfully and recorded anonymously!"
-                        if (BuildConfig.DEBUG) Log.i("VotingViewModel", "Backend vote submission successful. Original msg: ${backendResponse.message}, New msg: $newSuccessMessage")
-                        _uiState.value = VotingUiState.Success(newSuccessMessage) // Keep success state for a moment
-                        viewModelScope.launch { // Emit navigation event
+                        if (BuildConfig.DEBUG) Log.i("VotingViewModel", "Backend vote submission successful. UseCase response: ${backendResponse.message}, New msg: $newSuccessMessage")
+                        _uiState.value = VotingUiState.Success(newSuccessMessage)
+                        viewModelScope.launch {
                             _eventFlow.emit(VotingViewEvent.VoteSubmissionSuccessAndNavigate(newSuccessMessage))
                         }
                     },
                     onFailure = { error ->
                         val errorMessage = "Error: Vote Submission Failed - ${error.message}"
-                        if (BuildConfig.DEBUG) Log.e("VotingViewModel", "Backend vote submission error: ${error.message}")
+                        if (BuildConfig.DEBUG) Log.e("VotingViewModel", "Backend vote submission error via UseCase: ${error.message}")
                         _uiState.value = VotingUiState.Error(errorMessage)
                     }
                 )
@@ -137,6 +150,7 @@ class VotingViewModel(
 
     fun onBiometricAuthenticationError(errorCode: Int, errString: CharSequence) {
         // Use the centralized BiometricErrorMapper
+Biometric-Voting-App
         val errorMessage = BiometricErrorMapper.mapBiometricErrorCodeToString(errorCode, errString)
         if (BuildConfig.DEBUG) Log.e("VotingViewModel", "Biometric Auth Error $errorCode: $errString. Mapped to: $errorMessage")
         _uiState.value = VotingUiState.Error(errorMessage)
@@ -144,15 +158,15 @@ class VotingViewModel(
 
     fun onBiometricAuthenticationFailed() {
         // This callback means the biometric was valid (e.g. a fingerprint) but not recognized.
+Biometric-Voting-App
         val errorMessage = "Vote confirmation failed. Fingerprint not recognized."
         if (BuildConfig.DEBUG) Log.w("VotingViewModel", errorMessage)
         _uiState.value = VotingUiState.Error(errorMessage)
     }
 
-    /**
-     * Resets the UI state to Idle. Can be called after displaying a message or error.
-     */
     fun resetStateToIdle() {
         _uiState.value = VotingUiState.Idle
     }
 }
+
+// ViewModel Factory has been removed as Hilt will manage ViewModel creation.

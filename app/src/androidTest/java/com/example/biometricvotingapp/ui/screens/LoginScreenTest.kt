@@ -7,6 +7,10 @@ import com.example.biometricvotingapp.ui.screens.login.LoginUiState
 import com.example.biometricvotingapp.ui.screens.login.LoginViewModel
 import com.example.biometricvotingapp.ui.screens.login.LoginViewEvent
 import com.example.biometricvotingapp.ui.theme.BiometricVotingAppTheme
+import dagger.hilt.android.testing.HiltAndroidRule
+import dagger.hilt.android.testing.HiltAndroidTest
+
+Biometric-Voting-App
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -20,10 +24,14 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
+@HiltAndroidTest
 @RunWith(AndroidJUnit4::class)
 class LoginScreenTest {
 
-    @get:Rule
+    @get:Rule(order = 0)
+    var hiltRule = HiltAndroidRule(this)
+
+    @get:Rule(order = 1)
     val composeTestRule = createComposeRule()
 
     private lateinit var mockViewModel: LoginViewModel
@@ -33,6 +41,22 @@ class LoginScreenTest {
     private lateinit var eventFlow: MutableSharedFlow<LoginViewEvent>
 
     // Test Tags that would be ideally present in LoginScreen.kt
+    // private val loginButtonTag = "loginButton"
+    // private val loadingIndicatorTag = "loadingIndicator"
+    // private val errorMessageTextTag = "errorMessageText"
+
+    @Before
+    fun setUp() {
+        // hiltRule.inject() // Not needed here as we are not injecting into the test class itself.
+                           // We are manually providing a mocked ViewModel to the Composable.
+
+        mockViewModel = mockk(relaxed = true)
+        mockOnNavigateToRegister = mockk(relaxed = true)
+        mockOnLoginSuccess = mockk(relaxed = true)
+
+        uiStateFlow = MutableStateFlow(LoginUiState.Idle)
+        eventFlow = MutableSharedFlow()
+
     private val loginButtonTag = "loginButton" // Assuming Button itself has this
     private val loadingIndicatorTag = "loadingIndicator" // Assuming CircularProgressIndicator has this
     private val errorMessageTextTag = "errorMessageText" // Assuming error Text has this
@@ -47,6 +71,7 @@ class LoginScreenTest {
         // Setup StateFlow and SharedFlow for ViewModel mocks
         uiStateFlow = MutableStateFlow(LoginUiState.Idle)
         eventFlow = MutableSharedFlow() // For one-time events
+ Biometric-Voting-App
 
         every { mockViewModel.uiState } returns uiStateFlow
         every { mockViewModel.eventFlow } returns eventFlow.asSharedFlow()
@@ -56,7 +81,10 @@ class LoginScreenTest {
         composeTestRule.setContent {
             BiometricVotingAppTheme {
                 LoginScreen(
+                    viewModel = mockViewModel, // Manually passing mocked ViewModel
+
                     viewModel = mockViewModel,
+Biometric-Voting-App
                     onNavigateToRegister = mockOnNavigateToRegister,
                     onLoginSuccess = mockOnLoginSuccess
                 )
@@ -68,6 +96,30 @@ class LoginScreenTest {
     fun loginScreen_displaysKeyElements_whenIdle() {
         uiStateFlow.value = LoginUiState.Idle
         setLoginScreenContent()
+        composeTestRule.onNodeWithText("Biometric Voting App - Login").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Login with Fingerprint").assertIsDisplayed().assertIsEnabled()
+        composeTestRule.onNodeWithText("Not registered yet? Register here").assertIsDisplayed()
+
+        composeTestRule.onNodeWithText("Login with Fingerprint").assertExists()
+    }
+
+    @Test
+    fun loginScreen_showsLoadingIndicator_whenStateIsLoading() {
+        uiStateFlow.value = LoginUiState.Loading
+        setLoginScreenContent()
+
+        composeTestRule.onNodeWithText("Login with Fingerprint").assertDoesNotExist()
+        // Further assertions would benefit from testTags on the indicator and button.
+    }
+
+    @Test
+    fun loginScreen_showsErrorMessage_whenStateIsError() {
+        val errorMessage = "Invalid credentials test"
+        uiStateFlow.value = LoginUiState.Error(errorMessage)
+        setLoginScreenContent()
+
+        composeTestRule.onNodeWithText(errorMessage).assertIsDisplayed()
+
 
         composeTestRule.onNodeWithText("Biometric Voting App - Login").assertIsDisplayed() // TopAppBar
         composeTestRule.onNodeWithText("Login with Fingerprint").assertIsDisplayed().assertIsEnabled()
@@ -113,6 +165,7 @@ class LoginScreenTest {
         // Error message is displayed in a separate Text composable
         composeTestRule.onNodeWithText(errorMessage).assertIsDisplayed()
         // Button should be enabled again
+ Biometric-Voting-App
         composeTestRule.onNodeWithText("Login with Fingerprint").assertIsDisplayed().assertIsEnabled()
     }
 
@@ -133,12 +186,23 @@ class LoginScreenTest {
         composeTestRule.onNodeWithText("Not registered yet? Register here").performClick()
         verify(exactly = 1) { mockOnNavigateToRegister() }
         // Also verify that resetStateToIdle is called on the ViewModel
+Biometric-Voting-App
         verify(exactly = 1) { mockViewModel.resetStateToIdle() }
     }
 
     @Test
     fun successfulLoginEvent_triggersOnLoginSuccessCallback() = runTest {
         val testAnonymizedId = "test-id-for-login"
+
+        uiStateFlow.value = LoginUiState.Idle
+        setLoginScreenContent()
+
+        val job = launch {
+            eventFlow.emit(LoginViewEvent.NavigateToElectionList(testAnonymizedId))
+        }
+
+        composeTestRule.waitForIdle()
+
         uiStateFlow.value = LoginUiState.Idle // Start in a state that allows login flow
         setLoginScreenContent()
 
@@ -148,6 +212,7 @@ class LoginScreenTest {
         }
 
         composeTestRule.waitForIdle() // Ensure LaunchedEffect in Screen processes the event
+ Biometric-Voting-App
 
         verify(timeout = 1000) { mockOnLoginSuccess(testAnonymizedId) }
         job.cancel()

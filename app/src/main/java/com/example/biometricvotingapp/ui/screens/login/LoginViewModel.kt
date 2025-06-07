@@ -4,12 +4,19 @@ import android.app.Application
 import android.util.Log
 import androidx.biometric.BiometricPrompt
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
+// Removed ViewModelProvider import as factory is being removed
 import androidx.lifecycle.viewModelScope
 import com.example.biometricvotingapp.BuildConfig
+import com.example.biometricvotingapp.domain.usecase.LoginUserUseCase
+import com.example.biometricvotingapp.domain.usecase.UserNotRegisteredException
+// Removed AnonymizedIdGenerator import from ViewModel file scope
+import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator
 import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper // Import the new mapper
 // Removed BiometricAuthManager and BiometricAvailabilityStatus imports as they are not directly used in this VM
+Biometric-Voting-App
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -20,20 +27,23 @@ import kotlinx.coroutines.launch
 sealed class LoginUiState {
     object Idle : LoginUiState()
     object Loading : LoginUiState()
+    data class Success(val anonymizedId: String) : LoginUiState()
     data class Error(val message: String) : LoginUiState()
-    // No explicit Success state needed here as navigation handles it via event
 }
 
 // --- View Events ---
 sealed class LoginViewEvent {
     object ShowBiometricPrompt : LoginViewEvent()
     data class NavigateToElectionList(val anonymizedId: String) : LoginViewEvent()
-    // Could add NavigateToRegistration if login needs to trigger that (currently handled by UI)
+    object NavigateToRegistration : LoginViewEvent()
 }
 
-class LoginViewModel(
+@HiltViewModel
+class LoginViewModel @Inject constructor(
     private val application: Application,
+    private val loginUserUseCase: LoginUserUseCase
     private val anonymizedIdGenerator: AnonymizedIdGenerator
+Biometric-Voting-App
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)
@@ -44,43 +54,59 @@ class LoginViewModel(
 
     fun onLoginClicked() {
         if (BuildConfig.DEBUG) Log.d("LoginViewModel", "Login button clicked")
+        _uiState.value = LoginUiState.Loading
         _uiState.value = LoginUiState.Loading // Indicate loading before showing prompt
+Biometric-Voting-App
         viewModelScope.launch {
             _eventFlow.emit(LoginViewEvent.ShowBiometricPrompt)
         }
     }
 
     fun onBiometricAuthenticationSuccess(authResult: BiometricPrompt.AuthenticationResult) {
-        if (BuildConfig.DEBUG) Log.i("LoginViewModel", "Biometric Auth Succeeded. Has CryptoObject: ${authResult.cryptoObject != null}")
-        // Attempt to get the registered anonymized ID
-        val registeredAnonymizedId = anonymizedIdGenerator.getRegisteredAnonymizedId(application)
+        if (BuildConfig.DEBUG) Log.i("LoginViewModel", "Biometric Auth Succeeded.")
 
-        if (registeredAnonymizedId != null) {
-            if (BuildConfig.DEBUG) Log.i("LoginViewModel", "User is registered. Anonymized ID (first 8): ${registeredAnonymizedId.take(8)}")
-            _uiState.value = LoginUiState.Idle // Or a temporary success state if needed
-            viewModelScope.launch {
-                _eventFlow.emit(LoginViewEvent.NavigateToElectionList(registeredAnonymizedId))
-            }
-        } else {
-            if (BuildConfig.DEBUG) Log.w("LoginViewModel", "Biometric auth success, but no registered anonymized ID found.")
-            _uiState.value = LoginUiState.Error("Biometric recognized, but app registration not found. Please register if you haven't.")
+        _uiState.value = LoginUiState.Loading
+
+        viewModelScope.launch {
+            val result = loginUserUseCase()
+            result.fold(
+                onSuccess = { loggedInUserId ->
+                    if (BuildConfig.DEBUG) Log.i("LoginViewModel", "Login UseCase Succeeded. User ID: ${loggedInUserId.take(8)}")
+                    _uiState.value = LoginUiState.Success(loggedInUserId)
+                    _eventFlow.emit(LoginViewEvent.NavigateToElectionList(loggedInUserId))
+                },
+                onFailure = { exception ->
+                    if (exception is UserNotRegisteredException) {
+                        if (BuildConfig.DEBUG) Log.w("LoginViewModel", "Login UseCase indicated user not registered: ${exception.message}")
+                        _uiState.value = LoginUiState.Error(exception.message ?: "User not registered. Please register.")
+                        _eventFlow.emit(LoginViewEvent.NavigateToRegistration)
+                    } else {
+                        if (BuildConfig.DEBUG) Log.e("LoginViewModel", "Login UseCase Failed: ${exception.message}", exception)
+                        _uiState.value = LoginUiState.Error("Login failed: ${exception.message ?: "Unknown error"}")
+                    }
+                }
+            )
         }
     }
 
     fun onBiometricAuthenticationError(errorCode: Int, errString: CharSequence) {
         // Use the centralized BiometricErrorMapper
+Biometric-Voting-App
         val errorMessage = BiometricErrorMapper.mapBiometricErrorCodeToString(errorCode, errString)
         if (BuildConfig.DEBUG) Log.e("LoginViewModel", "Biometric Auth Error $errorCode: $errString. Mapped to: $errorMessage")
         _uiState.value = LoginUiState.Error(errorMessage)
     }
 
+    fun onBiometricAuthenticationError(message: String) {
     fun onBiometricAuthenticationError(message: String) { // Overload for non-API errors from UI (e.g. activity context null)
+Biometric-Voting-App
         if (BuildConfig.DEBUG) Log.e("LoginViewModel", "Biometric Auth Error: $message")
         _uiState.value = LoginUiState.Error(message)
     }
 
     fun onBiometricAuthenticationFailed() {
         // This callback means the biometric was valid (e.g. a fingerprint) but not recognized.
+Biometric-Voting-App
         val errorMessage = "Login Failed: Fingerprint not recognized. Please try again."
         if (BuildConfig.DEBUG) Log.w("LoginViewModel", errorMessage)
         _uiState.value = LoginUiState.Error(errorMessage)
@@ -91,16 +117,4 @@ class LoginViewModel(
     }
 }
 
-// --- ViewModel Factory ---
-@Suppress("UNCHECKED_CAST")
-class LoginViewModelFactory(
-    private val application: Application,
-    private val anonymizedIdGenerator: AnonymizedIdGenerator
-) : ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(LoginViewModel::class.java)) {
-            return LoginViewModel(application, anonymizedIdGenerator) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class")
-    }
-}
+// ViewModel Factory has been removed as Hilt will manage ViewModel creation.

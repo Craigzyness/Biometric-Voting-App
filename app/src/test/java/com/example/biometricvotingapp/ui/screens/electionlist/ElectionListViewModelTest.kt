@@ -2,9 +2,10 @@ package com.example.biometricvotingapp.ui.screens.electionlist
 
 import android.app.Application
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
-import com.example.biometricvotingapp.data.network.dto.ElectionDto
-import com.example.biometricvotingapp.data.repository.VotingRepository
 import com.example.biometricvotingapp.domain.model.Election
+import com.example.biometricvotingapp.domain.usecase.GetElectionsUseCase
+import com.example.biometricvotingapp.domain.usecase.LoginUserUseCase // Import LoginUserUseCase
+import com.example.biometricvotingapp.domain.usecase.UserNotRegisteredException // Import custom exception
 import io.mockk.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -21,107 +22,150 @@ class ElectionListViewModelTest {
     @get:Rule
     val instantTaskExecutorRule = InstantTaskExecutorRule()
 
-    private val testDispatcher = StandardTestDispatcher() // Use StandardTestDispatcher for more control
+    private val testDispatcher = StandardTestDispatcher()
 
     private lateinit var viewModel: ElectionListViewModel
     private lateinit var mockApplication: Application
-    private lateinit var mockVotingRepository: VotingRepository
+    private lateinit var mockGetElectionsUseCase: GetElectionsUseCase
+    private lateinit var mockLoginUserUseCase: LoginUserUseCase // Add mock for LoginUserUseCase
 
     @Before
     fun setUp() {
         Dispatchers.setMain(testDispatcher)
         mockApplication = mockk(relaxed = true)
-        mockVotingRepository = mockk()
+        mockGetElectionsUseCase = mockk()
+        mockLoginUserUseCase = mockk() // Initialize LoginUserUseCase mock
+
+        // Default mocks for use cases, can be overridden in specific tests
+        coEvery { mockLoginUserUseCase.invoke() } returns Result.success("defaultVoterId")
+        coEvery { mockGetElectionsUseCase.invoke(any()) } returns Result.success(emptyList())
+
+        // Instantiate ViewModel with all mocked dependencies
+        viewModel = ElectionListViewModel(mockApplication, mockGetElectionsUseCase, mockLoginUserUseCase)
     }
 
     @After
     fun tearDown() {
         Dispatchers.resetMain()
-    }
-
-    private fun createViewModel(anonymizedVoterId: String?): ElectionListViewModel {
-        // Ensure the default mock for getElections is general enough or reset it if it causes issues.
-        // For specific test cases, coEvery will override this.
-        coEvery { mockVotingRepository.getElections(any()) } returns Result.success(emptyList())
-        return ElectionListViewModel(mockApplication, mockVotingRepository, anonymizedVoterId)
+        clearAllMocks()
     }
 
     @Test
-    fun `initial state is Loading and loadElections is called`() = runTest(testDispatcher) {
-        // ViewModel calls loadElections in init block.
-        // Here, we verify the state after init has completed its work.
-        // The createViewModel helper already sets up a default coEvery for getElections.
-        viewModel = createViewModel(null)
+    fun `init fetches current user and loads elections, results in Empty for default mocks`() = runTest(testDispatcher) {
+        // ViewModel calls fetchCurrentUserAndLoadElections in init block.
+        // Default mocks: login success ("defaultVoterId"), getElections success (emptyList)
+        advanceUntilIdle() // Let the init block and internal calls complete
+
+        assertEquals(ElectionListUiState.Empty, viewModel.uiState.value)
+        coVerify { mockLoginUserUseCase.invoke() }
+        coVerify { mockGetElectionsUseCase.invoke("defaultVoterId") }
+    }
+
+    @Test
+    fun `init when LoginUserUseCase returns null user ID sets UserNotLoggedIn state`() = runTest(testDispatcher) {
+        coEvery { mockLoginUserUseCase.invoke() } returns Result.success(null) // Simulate no logged-in user
+
+        // Re-create viewModel with this specific mock for LoginUserUseCase for this test's init
+        viewModel = ElectionListViewModel(mockApplication, mockGetElectionsUseCase, mockLoginUserUseCase)
         advanceUntilIdle()
 
-        // If getElections returns emptyList by default in createViewModel's coEvery, then Empty state is expected.
-        assertEquals(ElectionListUiState.Empty, viewModel.uiState.value)
+        assertEquals(ElectionListUiState.UserNotLoggedIn, viewModel.uiState.value)
+        coVerify { mockLoginUserUseCase.invoke() }
+        coVerify(exactly = 0) { mockGetElectionsUseCase.invoke(any()) } // GetElectionsUseCase should not be called
     }
 
     @Test
-    fun `loadElections with null anonymizedVoterId success with data maps hasVoted from DTO`() = runTest(testDispatcher) {
-        val electionDtos = listOf(
-            ElectionDto("id1", "E1", "Title1", "Desc1", listOf("A"), "s1", "e1", "ACTIVE", hasVoted = true),
-            ElectionDto("id2", "E2", "Title2", "Desc2", listOf("B"), "s2", "e2", "ACTIVE", hasVoted = null) // null hasVoted from backend
-        )
-        coEvery { mockVotingRepository.getElections(null) } returns Result.success(electionDtos)
+    fun `init when LoginUserUseCase fails with UserNotRegisteredException sets UserNotLoggedIn state`() = runTest(testDispatcher) {
+        coEvery { mockLoginUserUseCase.invoke() } returns Result.failure(UserNotRegisteredException("Not registered"))
 
-        viewModel = createViewModel(null)
+        viewModel = ElectionListViewModel(mockApplication, mockGetElectionsUseCase, mockLoginUserUseCase)
+        advanceUntilIdle()
+
+        assertEquals(ElectionListUiState.UserNotLoggedIn, viewModel.uiState.value)
+        coVerify { mockLoginUserUseCase.invoke() }
+        coVerify(exactly = 0) { mockGetElectionsUseCase.invoke(any()) }
+    }
+
+    @Test
+    fun `init when LoginUserUseCase fails with generic exception sets Error state`() = runTest(testDispatcher) {
+        val errorMessage = "Generic login error"
+        coEvery { mockLoginUserUseCase.invoke() } returns Result.failure(Exception(errorMessage))
+
+        viewModel = ElectionListViewModel(mockApplication, mockGetElectionsUseCase, mockLoginUserUseCase)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertTrue(state is ElectionListUiState.Error)
+        assertEquals("Failed to retrieve user session: $errorMessage", (state as ElectionListUiState.Error).message)
+        coVerify { mockLoginUserUseCase.invoke() }
+        coVerify(exactly = 0) { mockGetElectionsUseCase.invoke(any()) }
+    }
+
+    @Test
+    fun `refreshElections success with data from use case sets Success state`() = runTest(testDispatcher) {
+        val testVoterId = "voter-test-id"
+        val domainElections = listOf(
+            Election(id = "id1", title = "Title1", description = "Desc1", options = listOf("A"), hasVoted = true),
+            Election(id = "id2", title = "Title2", description = "Desc2", options = listOf("B"), hasVoted = false)
+        )
+        coEvery { mockLoginUserUseCase.invoke() } returns Result.success(testVoterId)
+        coEvery { mockGetElectionsUseCase.invoke(testVoterId) } returns Result.success(domainElections)
+
+        // ViewModel is already created in setUp, init calls fetchCurrentUserAndLoadElections.
+        // To test refreshElections, we call it again after init has run.
+        // Reset mocks or ensure new coEvery overrides if init already made calls.
+        // For simplicity, let's assume init ran with default mocks leading to Empty or UserNotLoggedIn.
+        // Then we call refreshElections.
+        clearMocks(mockLoginUserUseCase, mockGetElectionsUseCase) // Clear init calls
+        coEvery { mockLoginUserUseCase.invoke() } returns Result.success(testVoterId)
+        coEvery { mockGetElectionsUseCase.invoke(testVoterId) } returns Result.success(domainElections)
+
+        viewModel.refreshElections() // Call the public refresh function
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertTrue(state is ElectionListUiState.Success)
-        val elections = (state as ElectionListUiState.Success).elections
-        assertEquals(2, elections.size)
-        // ViewModel mapping logic: hasVoted = dto.hasVoted ?: false
-        assertEquals(true, elections.find { it.id == "id1" }?.hasVoted) // True from DTO becomes true
-        assertEquals(false, elections.find { it.id == "id2" }?.hasVoted) // Null from DTO becomes false
+        assertEquals(domainElections, (state as ElectionListUiState.Success).elections)
+        coVerify(exactly = 1) { mockLoginUserUseCase.invoke() } // Verifies it was called by refresh
+        coVerify(exactly = 1) { mockGetElectionsUseCase.invoke(testVoterId) } // Verifies it was called by refresh
     }
 
     @Test
-    fun `loadElections with valid anonymizedVoterId success maps hasVoted correctly from DTO`() = runTest(testDispatcher) {
+    fun `refreshElections success with empty list from use case sets Empty state`() = runTest(testDispatcher) {
         val testVoterId = "voter-test-id"
-        val electionDtos = listOf(
-            ElectionDto("id1", "E1", "Title1", "Desc1", listOf("A"), "s1", "e1", "ACTIVE", hasVoted = true),
-            ElectionDto("id2", "E2", "Title2", "Desc2", listOf("B"), "s2", "e2", "ACTIVE", hasVoted = false),
-            ElectionDto("id3", "E3", "Title3", "Desc3", listOf("C"), "s3", "e3", "ACTIVE", null)
-        )
-        coEvery { mockVotingRepository.getElections(testVoterId) } returns Result.success(electionDtos)
+        coEvery { mockLoginUserUseCase.invoke() } returns Result.success(testVoterId)
+        coEvery { mockGetElectionsUseCase.invoke(testVoterId) } returns Result.success(emptyList())
 
-        viewModel = createViewModel(testVoterId)
-        advanceUntilIdle()
+        clearMocks(mockLoginUserUseCase, mockGetElectionsUseCase) // Clear init calls
+        coEvery { mockLoginUserUseCase.invoke() } returns Result.success(testVoterId)
+        coEvery { mockGetElectionsUseCase.invoke(testVoterId) } returns Result.success(emptyList())
 
-        val state = viewModel.uiState.value
-        assertTrue(state is ElectionListUiState.Success)
-        val elections = (state as ElectionListUiState.Success).elections
-        assertEquals(3, elections.size)
-        assertEquals(true, elections.find { it.id == "id1" }?.hasVoted)
-        assertEquals(false, elections.find { it.id == "id2" }?.hasVoted)
-        assertEquals(false, elections.find { it.id == "id3" }?.hasVoted) // Null from DTO maps to false
-    }
-
-    @Test
-    fun `loadElections success with empty list sets Empty state`() = runTest(testDispatcher) {
-        val testVoterId = "voter-test-id"
-        coEvery { mockVotingRepository.getElections(testVoterId) } returns Result.success(emptyList())
-
-        viewModel = createViewModel(testVoterId)
+        viewModel.refreshElections()
         advanceUntilIdle()
 
         assertEquals(ElectionListUiState.Empty, viewModel.uiState.value)
+        coVerify(exactly = 1) { mockLoginUserUseCase.invoke() }
+        coVerify(exactly = 1) { mockGetElectionsUseCase.invoke(testVoterId) }
     }
 
     @Test
-    fun `loadElections failure sets Error state`() = runTest(testDispatcher) {
+    fun `refreshElections failure from GetElectionsUseCase sets Error state`() = runTest(testDispatcher) {
         val testVoterId = "voter-test-id"
-        val errorMessage = "Network error"
-        coEvery { mockVotingRepository.getElections(testVoterId) } returns Result.failure(Exception(errorMessage))
+        val errorMessage = "Network error from GetElectionsUseCase"
+        coEvery { mockLoginUserUseCase.invoke() } returns Result.success(testVoterId)
+        coEvery { mockGetElectionsUseCase.invoke(testVoterId) } returns Result.failure(Exception(errorMessage))
 
-        viewModel = createViewModel(testVoterId)
+        clearMocks(mockLoginUserUseCase, mockGetElectionsUseCase)
+        coEvery { mockLoginUserUseCase.invoke() } returns Result.success(testVoterId)
+        coEvery { mockGetElectionsUseCase.invoke(testVoterId) } returns Result.failure(Exception(errorMessage))
+
+        viewModel.refreshElections()
         advanceUntilIdle()
 
         val state = viewModel.uiState.value
         assertTrue(state is ElectionListUiState.Error)
         assertEquals(errorMessage, (state as ElectionListUiState.Error).message)
+        coVerify(exactly = 1) { mockLoginUserUseCase.invoke() }
+        coVerify(exactly = 1) { mockGetElectionsUseCase.invoke(testVoterId) }
     }
 }
