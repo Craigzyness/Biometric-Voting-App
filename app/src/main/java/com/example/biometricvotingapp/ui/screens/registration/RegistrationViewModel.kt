@@ -12,6 +12,12 @@ import com.example.biometricvotingapp.domain.usecase.RegisterVoterUseCase
 import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
+// Removed ApiService import as it's not directly used
+import com.example.biometricvotingapp.data.repository.VotingRepository
+import com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator
+import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper // Import the new mapper
+Biometric-Voting-App
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -68,12 +74,18 @@ class RegistrationViewModel @Inject constructor(
     }
 
     fun onBiometricAuthenticationError(errorCode: Int, errString: CharSequence) {
+        // Use the centralized BiometricErrorMapper
+Biometric-Voting-App
         val errorMessage = BiometricErrorMapper.mapBiometricErrorCodeToString(errorCode, errString)
         if (BuildConfig.DEBUG) Log.e("RegistrationViewModel", "Biometric Auth Error $errorCode: $errString. Mapped to: $errorMessage")
         _uiState.value = RegistrationUiState.Error(errorMessage)
     }
 
     fun onBiometricAuthenticationFailed() {
+        // This is a distinct callback from onAuthenticationError.
+        // BiometricPrompt.ERROR_NEGATIVE_BUTTON or ERROR_USER_CANCELED might lead to onAuthenticationError.
+        // onAuthenticationFailed() means the biometric was valid but not recognized.
+Biometric-Voting-App
         val errorMessage = "Biometric authentication failed. Fingerprint not recognized."
         if (BuildConfig.DEBUG) Log.w("RegistrationViewModel", errorMessage)
         _uiState.value = RegistrationUiState.Error(errorMessage)

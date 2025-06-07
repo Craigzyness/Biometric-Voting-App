@@ -14,6 +14,11 @@ import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper
 import com.example.biometricvotingapp.utils.SecurityUtil
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+// Removed ApiService import as it's not directly used
+import com.example.biometricvotingapp.data.network.dto.VoteRequest
+import com.example.biometricvotingapp.data.repository.VotingRepository
+import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper // Import the new mapper
+Biometric-Voting-App
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -24,6 +29,12 @@ import kotlinx.coroutines.launch
 import android.util.Base64
 import androidx.biometric.BiometricPrompt
 import com.example.biometricvotingapp.BuildConfig
+import android.util.Base64 // For Base64 encoding
+import androidx.biometric.BiometricPrompt // For CryptoObject type, and error codes
+import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
+import com.example.biometricvotingapp.utils.SecurityUtil // For Crypto operations
+
+Biometric-Voting-App
 
 // Define UI States for VotingScreen
 sealed interface VotingUiState {
@@ -47,6 +58,11 @@ class VotingViewModel @Inject constructor(
     private val loginUserUseCase: LoginUserUseCase,
     private val submitVoteUseCase: SubmitVoteUseCase,
     private val securityUtil: SecurityUtil
+
+class VotingViewModel(
+    private val application: Application, // Keep application if SecurityUtil or other utils might need it.
+    private val votingRepository: VotingRepository // Injected
+Biometric-Voting-App
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<VotingUiState>(VotingUiState.Idle)
@@ -133,12 +149,16 @@ class VotingViewModel @Inject constructor(
     }
 
     fun onBiometricAuthenticationError(errorCode: Int, errString: CharSequence) {
+        // Use the centralized BiometricErrorMapper
+Biometric-Voting-App
         val errorMessage = BiometricErrorMapper.mapBiometricErrorCodeToString(errorCode, errString)
         if (BuildConfig.DEBUG) Log.e("VotingViewModel", "Biometric Auth Error $errorCode: $errString. Mapped to: $errorMessage")
         _uiState.value = VotingUiState.Error(errorMessage)
     }
 
     fun onBiometricAuthenticationFailed() {
+        // This callback means the biometric was valid (e.g. a fingerprint) but not recognized.
+Biometric-Voting-App
         val errorMessage = "Vote confirmation failed. Fingerprint not recognized."
         if (BuildConfig.DEBUG) Log.w("VotingViewModel", errorMessage)
         _uiState.value = VotingUiState.Error(errorMessage)

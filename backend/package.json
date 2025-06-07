@@ -8,6 +8,8 @@
     "test": "cross-env NODE_ENV=test jest --testTimeout=10000 --detectOpenHandles",
     "lint": "eslint . --ignore-path .gitignore",
     "audit:ci": "npm audit --audit-level=high"
+    "lint": "eslint . --ignore-path .gitignore"
+Biometric-Voting-App
   },
   "dependencies": {
     "express": "^4.17.1",
