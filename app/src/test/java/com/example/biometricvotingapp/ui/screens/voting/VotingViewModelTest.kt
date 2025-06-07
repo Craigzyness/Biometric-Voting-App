@@ -11,10 +11,11 @@ import com.example.biometricvotingapp.domain.usecase.SubmitVoteUseCase
 import com.example.biometricvotingapp.domain.usecase.GetElectionsUseCase
 import com.example.biometricvotingapp.domain.usecase.LoginUserUseCase
 import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper
-import com.example.biometricvotingapp.util.PlayIntegrityService // Import PlayIntegrityService
-import com.example.biometricvotingapp.util.PlayIntegrityException // Import custom exception
+import com.example.biometricvotingapp.util.PlayIntegrityService
+import com.example.biometricvotingapp.util.PlayIntegrityException
 import com.example.biometricvotingapp.utils.SecurityUtil
-import com.google.android.play.core.integrity.model.IntegrityErrorCode // Import IntegrityErrorCode
+import com.google.android.play.core.integrity.model.IntegrityErrorCode
+import com.google.common.truth.Truth.assertThat // Import for Truth assertions
 import io.mockk.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -22,11 +23,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.*
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.* // Keep JUnit asserts for non-Truth assertions if any
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
-// import timber.log.Timber // Not strictly needed for mocking if just calling Timber.d etc.
 
 @ExperimentalCoroutinesApi
 class VotingViewModelTest {
@@ -42,7 +42,7 @@ class VotingViewModelTest {
     private lateinit var mockLoginUserUseCase: LoginUserUseCase
     private lateinit var mockSubmitVoteUseCase: SubmitVoteUseCase
     private lateinit var mockSecurityUtil: SecurityUtil
-    private lateinit var mockPlayIntegrityService: PlayIntegrityService // Added
+    private lateinit var mockPlayIntegrityService: PlayIntegrityService
     private lateinit var mockAuthResult: BiometricPrompt.AuthenticationResult
     private lateinit var mockCryptoObject: BiometricPrompt.CryptoObject
 
@@ -54,7 +54,7 @@ class VotingViewModelTest {
         mockLoginUserUseCase = mockk(relaxed = true)
         mockSubmitVoteUseCase = mockk(relaxed = true)
         mockSecurityUtil = mockk(relaxed = true)
-        mockPlayIntegrityService = mockk() // Initialize PlayIntegrityService mock
+        mockPlayIntegrityService = mockk()
         mockAuthResult = mockk(relaxed = true)
         mockCryptoObject = mockk<BiometricPrompt.CryptoObject>(relaxed = true)
 
@@ -66,20 +66,14 @@ class VotingViewModelTest {
             mockLoginUserUseCase,
             mockSubmitVoteUseCase,
             mockSecurityUtil,
-            mockPlayIntegrityService // Pass mock to constructor
+            mockPlayIntegrityService
         )
-
-        // For Timber, if Timber.tag("...") is used in VM and no Tree is planted for tests,
-        // it might throw. If so, mock Timber:
-        // mockkStatic(Timber::class)
-        // every { Timber.tag(any()) } returns mockk(relaxed = true) // or a specific Timber.Tree instance
     }
 
     @After
     fun tearDown() {
         Dispatchers.resetMain()
         clearAllMocks()
-        // unmockkStatic(Timber::class) // If Timber was mocked
     }
 
     @Test
@@ -120,22 +114,25 @@ class VotingViewModelTest {
     }
 
     @Test
-    fun `onBiometricAuthenticationSuccess with Play Integrity success and vote submission success`() = runTest(testDispatcher) {
+    fun `onBiometricAuthenticationSuccess with Play Integrity success and vote submission success, verifies VoteRequest content`() = runTest(testDispatcher) {
         val voterId = "voter1"
         val electionId = "election1"
         val option = "optionA"
-        val testNonce = "test-nonce"
-        val testIntegrityToken = "test-integrity-token"
+        val expectedNonce = "test-nonce-123" // Specific nonce for verification
+        val expectedToken = "test-integrity-token-abc" // Specific token for verification
         val vmSuccessMessage = "Vote submitted successfully and recorded anonymously!"
         val mockUseCaseResponseDto = VoteDetailsDto("voteId1", electionId, option, "timestamp")
         val mockUseCaseResponse = VoteResponse(message = "Vote Cast Successfully!", vote = mockUseCaseResponseDto)
-        val mockIvBytes = "testIV".toByteArray()
-        val mockEncryptedProofBytes = "testEncryptedProof".toByteArray()
+
+        val mockIvBytes = "testIV-bytes".toByteArray()
+        val mockEncryptedProofBytes = "testEncryptedProof-bytes".toByteArray()
+        val expectedIvString = Base64.encodeToString(mockIvBytes, Base64.NO_WRAP)
+        val expectedEncryptedProofString = Base64.encodeToString(mockEncryptedProofBytes, Base64.NO_WRAP)
 
         every { mockAuthResult.cryptoObject } returns mockCryptoObject
         every { mockSecurityUtil.encryptData(any(), mockCryptoObject) } returns Pair(mockIvBytes, mockEncryptedProofBytes)
-        every { mockPlayIntegrityService.generateNonce() } returns testNonce
-        coEvery { mockPlayIntegrityService.requestIntegrityToken(testNonce) } returns Result.success(testIntegrityToken)
+        every { mockPlayIntegrityService.generateNonce() } returns expectedNonce // Use specific nonce
+        coEvery { mockPlayIntegrityService.requestIntegrityToken(expectedNonce) } returns Result.success(expectedToken) // Use specific token
 
         val voteRequestSlot = slot<VoteRequest>()
         coEvery { mockSubmitVoteUseCase.invoke(capture(voteRequestSlot)) } returns Result.success(mockUseCaseResponse)
@@ -143,15 +140,14 @@ class VotingViewModelTest {
         val events = mutableListOf<VotingViewEvent>()
         val job = launch(UnconfinedTestDispatcher(testScheduler)) { viewModel.eventFlow.collect { events.add(it) } }
 
-        // Simulate the flow starting from after biometric prompt is shown
-        viewModel.onCastVoteClicked(voterId, electionId, option) // This sets currentVoteArgs
+        viewModel.onCastVoteClicked(voterId, electionId, option)
         viewModel.onBiometricAuthenticationSuccess(mockAuthResult)
         advanceUntilIdle()
 
         coVerifyOrder {
             mockSecurityUtil.encryptData(any(), mockCryptoObject)
             mockPlayIntegrityService.generateNonce()
-            mockPlayIntegrityService.requestIntegrityToken(testNonce)
+            mockPlayIntegrityService.requestIntegrityToken(expectedNonce)
             mockSubmitVoteUseCase.invoke(any())
         }
 
@@ -163,6 +159,17 @@ class VotingViewModelTest {
         assertNotNull("Navigate event should be emitted", emittedEvent)
         assertEquals(vmSuccessMessage, (emittedEvent as VotingViewEvent.VoteSubmissionSuccessAndNavigate).message)
 
+        // Assertions for captured VoteRequest
+        assertTrue(voteRequestSlot.isCaptured)
+        val capturedRequest = voteRequestSlot.captured
+        assertThat(capturedRequest.anonymizedVoterId).isEqualTo(voterId)
+        assertThat(capturedRequest.electionId).isEqualTo(electionId)
+        assertThat(capturedRequest.selectedOption).isEqualTo(option)
+        assertThat(capturedRequest.encryptedProof).isEqualTo(expectedEncryptedProofString)
+        assertThat(capturedRequest.iv).isEqualTo(expectedIvString)
+        assertThat(capturedRequest.playIntegrityToken).isEqualTo(expectedToken)
+        assertThat(capturedRequest.playIntegrityNonce).isEqualTo(expectedNonce)
+
         job.cancel()
     }
 
@@ -171,10 +178,10 @@ class VotingViewModelTest {
         val voterId = "voter1"
         val electionId = "election1"
         val option = "optionA"
-        val testNonce = "test-nonce"
+        val testNonce = "test-nonce-fail"
         val integrityErrorCode = IntegrityErrorCode.NETWORK_ERROR
         val integrityException = PlayIntegrityException("Integrity fail", errorCode = integrityErrorCode)
-        val mappedErrorMessageFromService = "Network error." // From PlayIntegrityService.getErrorMessageForCode
+        val mappedErrorMessageFromService = "Network error."
 
         every { mockAuthResult.cryptoObject } returns mockCryptoObject
         every { mockSecurityUtil.encryptData(any(), mockCryptoObject) } returns Pair("iv".toByteArray(), "proof".toByteArray())
@@ -182,8 +189,7 @@ class VotingViewModelTest {
         coEvery { mockPlayIntegrityService.requestIntegrityToken(testNonce) } returns Result.failure(integrityException)
         every { mockPlayIntegrityService.getErrorMessageForCode(integrityErrorCode) } returns mappedErrorMessageFromService
 
-
-        viewModel.onCastVoteClicked(voterId, electionId, option) // This sets currentVoteArgs
+        viewModel.onCastVoteClicked(voterId, electionId, option)
         viewModel.onBiometricAuthenticationSuccess(mockAuthResult)
         advanceUntilIdle()
 
@@ -192,20 +198,13 @@ class VotingViewModelTest {
             mockPlayIntegrityService.generateNonce()
             mockPlayIntegrityService.requestIntegrityToken(testNonce)
         }
-        coVerify(exactly = 0) { mockSubmitVoteUseCase.invoke(any()) } // Vote submission should NOT be called
+        coVerify(exactly = 0) { mockSubmitVoteUseCase.invoke(any()) }
 
         val finalState = viewModel.uiState.value
         assertTrue("UI State should be Error, was $finalState", finalState is VotingUiState.Error)
         val expectedMessage = "Device integrity check failed: $mappedErrorMessageFromService (Code: $integrityErrorCode)"
         assertEquals(expectedMessage, (finalState as VotingUiState.Error).message)
     }
-
-    // ... (other existing tests for biometric errors, failed encryption, failed vote submission from use case, etc. remain largely the same)
-    // The existing tests `successful vote submission flow...` and `vote submission failure from use case...`
-    // are now effectively sub-cases of "Play Integrity success". I've integrated the Play Integrity success
-    // into a new test `onBiometricAuthenticationSuccess with Play Integrity success and vote submission success`.
-    // The original `successful vote submission flow...` can be removed or merged.
-    // For now, I'll keep them separate and ensure they also mock PlayIntegrity success.
 
     @Test
     fun `onBiometricAuthenticationError uses BiometricErrorMapper and sets Error state`() {
@@ -280,7 +279,6 @@ class VotingViewModelTest {
         every { mockPlayIntegrityService.generateNonce() } returns testNonce
         coEvery { mockPlayIntegrityService.requestIntegrityToken(testNonce) } returns Result.success(testIntegrityToken)
 
-
         coEvery { mockSubmitVoteUseCase.invoke(any()) } returns Result.failure(Exception(errorMessage))
 
         viewModel.onCastVoteClicked(voterId, electionId, option)
@@ -288,6 +286,7 @@ class VotingViewModelTest {
         advanceUntilIdle()
 
         coVerifyOrder {
+            mockSecurityUtil.encryptData(any(), mockCryptoObject)
             mockPlayIntegrityService.generateNonce()
             mockPlayIntegrityService.requestIntegrityToken(testNonce)
             mockSubmitVoteUseCase.invoke(any())
@@ -300,20 +299,19 @@ class VotingViewModelTest {
 
     @Test
     fun `onBiometricAuthenticationSuccess when currentVoteArgs is null sets Error`() = runTest(testDispatcher) {
-        // currentVoteArgs is null because onCastVoteClicked was not called before onBiometricAuthenticationSuccess
         viewModel.onBiometricAuthenticationSuccess(mockAuthResult)
         advanceUntilIdle()
 
         val finalState = viewModel.uiState.value
         assertTrue("UI State should be Error, was $finalState", finalState is VotingUiState.Error)
         assertEquals("Error: Vote arguments not found after biometric success.", (finalState as VotingUiState.Error).message)
-        coVerify(exactly = 0) { mockPlayIntegrityService.generateNonce() } // Integrity check should not start
+        coVerify(exactly = 0) { mockPlayIntegrityService.generateNonce() }
         coVerify(exactly = 0) { mockSubmitVoteUseCase.invoke(any()) }
     }
 
     @Test
     fun `resetStateToIdle sets state to Idle`() {
-        viewModel.onBiometricAuthenticationError(1, "test") // Set some error state
+        viewModel.onBiometricAuthenticationError(1, "test")
         assertNotEquals(VotingUiState.Idle, viewModel.uiState.value)
 
         viewModel.resetStateToIdle()

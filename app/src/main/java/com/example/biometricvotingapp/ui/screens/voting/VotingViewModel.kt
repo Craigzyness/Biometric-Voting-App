@@ -9,8 +9,8 @@ import com.example.biometricvotingapp.domain.usecase.SubmitVoteUseCase
 import com.example.biometricvotingapp.domain.usecase.GetElectionsUseCase
 import com.example.biometricvotingapp.domain.usecase.LoginUserUseCase
 import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper
-import com.example.biometricvotingapp.util.PlayIntegrityService // Import PlayIntegrityService
-import com.example.biometricvotingapp.util.PlayIntegrityException // Import custom exception
+import com.example.biometricvotingapp.util.PlayIntegrityService
+import com.example.biometricvotingapp.util.PlayIntegrityException
 import com.example.biometricvotingapp.utils.SecurityUtil
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -23,14 +23,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import android.util.Base64
 import androidx.biometric.BiometricPrompt
-// import com.example.biometricvotingapp.BuildConfig // Timber handles debug/release logging
-import timber.log.Timber // Use Timber
+// import com.example.biometricvotingapp.BuildConfig
+import timber.log.Timber
 
 // Define UI States for VotingScreen
 sealed interface VotingUiState {
     object Idle : VotingUiState
     object AwaitingBiometrics : VotingUiState
-    data class Loading(val message: String = "Processing...") : VotingUiState // Added default message
+    data class Loading(val message: String = "Processing...") : VotingUiState
     data class Success(val message: String) : VotingUiState
     data class Error(val message: String) : VotingUiState
 }
@@ -43,12 +43,12 @@ sealed interface VotingViewEvent {
 
 @HiltViewModel
 class VotingViewModel @Inject constructor(
-    private val application: Application, // Keep for now, though specific contexts are often preferred
+    private val application: Application,
     private val getElectionsUseCase: GetElectionsUseCase,
     private val loginUserUseCase: LoginUserUseCase,
     private val submitVoteUseCase: SubmitVoteUseCase,
-    private val securityUtil: SecurityUtil, // Assuming this is now an injectable class
-    private val playIntegrityService: PlayIntegrityService // Add PlayIntegrityService
+    private val securityUtil: SecurityUtil,
+    private val playIntegrityService: PlayIntegrityService
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<VotingUiState>(VotingUiState.Idle)
@@ -77,7 +77,7 @@ class VotingViewModel @Inject constructor(
     }
 
     fun onBiometricAuthenticationSuccess(authResult: androidx.biometric.BiometricPrompt.AuthenticationResult) {
-        Timber.d("Biometric authentication successful, proceeding to submit vote.")
+        Timber.d("Biometric authentication successful, proceeding.")
 
         val cryptoObjectFromResult = authResult.cryptoObject
         if (cryptoObjectFromResult == null) {
@@ -106,7 +106,6 @@ class VotingViewModel @Inject constructor(
         val ivString = Base64.encodeToString(ivBytes, Base64.NO_WRAP)
         val encryptedProofString = Base64.encodeToString(encryptedProofBytes, Base64.NO_WRAP)
 
-        // Start Play Integrity check + Vote Submission
         viewModelScope.launch {
             _uiState.value = VotingUiState.Loading("Verifying device integrity...")
             val nonce = playIntegrityService.generateNonce()
@@ -114,10 +113,8 @@ class VotingViewModel @Inject constructor(
 
             integrityTokenResult.fold(
                 onSuccess = { token ->
-                    // Log only a part of the token or a hash in production if needed for audit, never the full token.
                     Timber.i("Play Integrity token obtained successfully.")
-                    // For debugging, you might log token.take(10) or similar, but ensure it's debug-only.
-                    // Timber.d("Play Integrity token (first 10): %s", token.take(10))
+                    // Timber.d("Play Integrity token (first 10): %s", token.take(10)) // Debug only
 
                     _uiState.value = VotingUiState.Loading("Submitting vote...")
 
@@ -126,9 +123,9 @@ class VotingViewModel @Inject constructor(
                         electionId = capturedArgs.second,
                         selectedOption = capturedArgs.third,
                         encryptedProof = encryptedProofString,
-                        iv = ivString
-                        // TODO: In a future step, add 'token' (Play Integrity token) to voteRequest
-                        // if backend is set up to verify it.
+                        iv = ivString,
+                        playIntegrityToken = token,      // Populate the new field
+                        playIntegrityNonce = nonce       // Populate the new field
                     )
 
                     val voteSubmissionResult = submitVoteUseCase(voteRequest)
@@ -150,13 +147,11 @@ class VotingViewModel @Inject constructor(
                 onFailure = { exception ->
                     Timber.e(exception, "Play Integrity check failed.")
                     val errorMessage = if (exception is PlayIntegrityException) {
-                        // Using getErrorMessageForCode from the injected service instance
                         "Device integrity check failed: ${playIntegrityService.getErrorMessageForCode(exception.errorCode ?: -100)} (Code: ${exception.errorCode ?: "N/A"})"
                     } else {
                         "Device integrity check failed: ${exception.message ?: "Unknown error"}"
                     }
                     _uiState.value = VotingUiState.Error(errorMessage)
-                    // Do not proceed with vote submission
                 }
             )
         }
@@ -178,5 +173,3 @@ class VotingViewModel @Inject constructor(
         _uiState.value = VotingUiState.Idle
     }
 }
-
-// ViewModel Factory has been removed as Hilt will manage ViewModel creation.
