@@ -6,7 +6,7 @@ import androidx.lifecycle.ViewModel
 // Removed ViewModelProvider import
 import androidx.lifecycle.viewModelScope
 import com.example.biometricvotingapp.data.network.dto.VoteRequest
-// Removed unused repository imports from ViewModel file scope
+// Removed unused repository imports
 import com.example.biometricvotingapp.domain.usecase.SubmitVoteUseCase
 import com.example.biometricvotingapp.domain.usecase.GetElectionsUseCase
 import com.example.biometricvotingapp.domain.usecase.LoginUserUseCase
