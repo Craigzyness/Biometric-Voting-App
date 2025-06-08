@@ -56,6 +56,10 @@ jobs:
     - name: Security Vulnerability Scan
       run: npm run audit:ci
 
+
+    - name: Security Vulnerability Scan
+      run: npm run audit:ci
+
     Biometric-Voting-App
     - name: Run ESLint
       run: npm run lint

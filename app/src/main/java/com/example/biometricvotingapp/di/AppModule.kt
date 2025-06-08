@@ -1,5 +1,13 @@
 package com.example.biometricvotingapp.di
 
+import android.app.Application
+import android.content.Context
+import com.example.biometricvotingapp.data.network.ApiService
+import com.example.biometricvotingapp.data.repository.VotingRepository
+import com.example.biometricvotingapp.domain.repository.AuthRepository
+import com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator
+import com.example.biometricvotingapp.util.PlayIntegrityService // Import PlayIntegrityService
+import com.example.biometricvotingapp.utils.SecurityUtil
 import android.app.Application // For ApplicationContext if AnonymizedIdGenerator/SecurityUtil need it broadly
 import android.content.Context
 import com.example.biometricvotingapp.data.network.ApiService
@@ -7,6 +15,7 @@ import com.example.biometricvotingapp.data.repository.VotingRepository // Implem
 import com.example.biometricvotingapp.domain.repository.AuthRepository
 import com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator // Corrected path
 import com.example.biometricvotingapp.utils.SecurityUtil // Corrected path
+Biometric-Voting-App
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -21,13 +30,49 @@ object AppModule {
     @Provides
     @Singleton
     fun provideApiService(): ApiService {
-        // Assuming ApiService.instance is the correct way to get the singleton
+Biometric-Voting-App
         return ApiService.instance
     }
 
     @Provides
     @Singleton
     fun provideAuthRepository(
+
+        apiService: ApiService
+        // @ApplicationContext context: Context // VotingRepository currently does not take context
+    ): AuthRepository {
+        return VotingRepository(apiService)
+    }
+
+    // TODO: Refactor AnonymizedIdGenerator from 'object' to 'class' that takes Context for Hilt DI.
+    // The current provider will not work as expected with 'object AnonymizedIdGenerator'.
+    // This provider is written assuming AnonymizedIdGenerator becomes:
+    // class AnonymizedIdGenerator @Inject constructor(@ApplicationContext private val context: Context)
+    @Provides
+    @Singleton
+    fun provideAnonymizedIdGenerator(@ApplicationContext context: Context): AnonymizedIdGenerator {
+        // return AnonymizedIdGenerator(context) // This would be the line if it were a class
+        return com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator // Returning the object for now, Hilt won't inject this instance if constructor changes.
+    }
+
+    // TODO: Refactor SecurityUtil from 'object' to 'class' that takes Context for Hilt DI.
+    // The current provider will not work as expected with 'object SecurityUtil'.
+    // This provider is written assuming SecurityUtil becomes:
+    // class SecurityUtil @Inject constructor(@ApplicationContext private val context: Context)
+    @Provides
+    @Singleton
+    fun provideSecurityUtil(@ApplicationContext context: Context): SecurityUtil {
+        // return SecurityUtil(context) // This would be the line if it were a class
+        return com.example.biometricvotingapp.utils.SecurityUtil // Returning the object for now.
+    }
+
+    @Provides
+    @Singleton
+    fun providePlayIntegrityService(@ApplicationContext context: Context): PlayIntegrityService {
+        // PlayIntegrityService is already a class designed for Hilt injection
+        return PlayIntegrityService(context)
+    }
+
         apiService: ApiService,
         // @ApplicationContext context: Context // Assuming VotingRepository will be updated to take context
                                             // Current VotingRepository(apiService) only.
@@ -103,4 +148,5 @@ object AppModule {
     // fun provideApplicationContext(application: Application): Context {
     //     return application.applicationContext
     // }
+Biometric-Voting-App
 }

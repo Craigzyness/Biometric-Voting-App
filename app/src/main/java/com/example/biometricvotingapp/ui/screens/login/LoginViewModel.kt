@@ -42,7 +42,7 @@ sealed class LoginViewEvent {
 class LoginViewModel @Inject constructor(
     private val application: Application,
     private val loginUserUseCase: LoginUserUseCase
-    private val anonymizedIdGenerator: AnonymizedIdGenerator
+private val anonymizedIdGenerator: AnonymizedIdGenerator
 Biometric-Voting-App
 ) : ViewModel() {
 
@@ -55,8 +55,10 @@ Biometric-Voting-App
     fun onLoginClicked() {
         if (BuildConfig.DEBUG) Log.d("LoginViewModel", "Login button clicked")
         _uiState.value = LoginUiState.Loading
-        _uiState.value = LoginUiState.Loading // Indicate loading before showing prompt
+
+      _uiState.value = LoginUiState.Loading // Indicate loading before showing prompt
 Biometric-Voting-App
+
         viewModelScope.launch {
             _eventFlow.emit(LoginViewEvent.ShowBiometricPrompt)
         }
@@ -90,8 +92,8 @@ Biometric-Voting-App
     }
 
     fun onBiometricAuthenticationError(errorCode: Int, errString: CharSequence) {
-        // Use the centralized BiometricErrorMapper
 Biometric-Voting-App
+
         val errorMessage = BiometricErrorMapper.mapBiometricErrorCodeToString(errorCode, errString)
         if (BuildConfig.DEBUG) Log.e("LoginViewModel", "Biometric Auth Error $errorCode: $errString. Mapped to: $errorMessage")
         _uiState.value = LoginUiState.Error(errorMessage)
@@ -105,6 +107,7 @@ Biometric-Voting-App
     }
 
     fun onBiometricAuthenticationFailed() {
+
         // This callback means the biometric was valid (e.g. a fingerprint) but not recognized.
 Biometric-Voting-App
         val errorMessage = "Login Failed: Fingerprint not recognized. Please try again."

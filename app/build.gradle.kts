@@ -20,6 +20,7 @@ val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = java.util.Properties()
 if (keystorePropertiesFile.exists() && keystorePropertiesFile.isFile) {
     keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+Biometric-Voting-App
 }
 
 android {
@@ -154,6 +155,9 @@ dependencies {
     implementation("com.google.firebase:firebase-crashlytics-ktx")
     // Firebase Analytics (often recommended with Crashlytics)
     implementation("com.google.firebase:firebase-analytics-ktx")
+
+    // Play Integrity API
+    implementation(libs.play.integrity)
 
     // Network
     // TODO: After updating libraries, ensure app compiles, tests pass, and perform manual testing.

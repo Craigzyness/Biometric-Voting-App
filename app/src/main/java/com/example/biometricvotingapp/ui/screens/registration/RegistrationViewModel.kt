@@ -74,7 +74,6 @@ class RegistrationViewModel @Inject constructor(
     }
 
     fun onBiometricAuthenticationError(errorCode: Int, errString: CharSequence) {
-        // Use the centralized BiometricErrorMapper
 Biometric-Voting-App
         val errorMessage = BiometricErrorMapper.mapBiometricErrorCodeToString(errorCode, errString)
         if (BuildConfig.DEBUG) Log.e("RegistrationViewModel", "Biometric Auth Error $errorCode: $errString. Mapped to: $errorMessage")
@@ -82,10 +81,7 @@ Biometric-Voting-App
     }
 
     fun onBiometricAuthenticationFailed() {
-        // This is a distinct callback from onAuthenticationError.
-        // BiometricPrompt.ERROR_NEGATIVE_BUTTON or ERROR_USER_CANCELED might lead to onAuthenticationError.
-        // onAuthenticationFailed() means the biometric was valid but not recognized.
-Biometric-Voting-App
+ Biometric-Voting-App
         val errorMessage = "Biometric authentication failed. Fingerprint not recognized."
         if (BuildConfig.DEBUG) Log.w("RegistrationViewModel", errorMessage)
         _uiState.value = RegistrationUiState.Error(errorMessage)

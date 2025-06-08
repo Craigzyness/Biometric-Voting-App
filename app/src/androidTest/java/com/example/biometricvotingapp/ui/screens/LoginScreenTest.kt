@@ -9,7 +9,6 @@ import com.example.biometricvotingapp.ui.screens.login.LoginViewEvent
 import com.example.biometricvotingapp.ui.theme.BiometricVotingAppTheme
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
-
 Biometric-Voting-App
 import io.mockk.every
 import io.mockk.mockk
@@ -56,8 +55,7 @@ class LoginScreenTest {
 
         uiStateFlow = MutableStateFlow(LoginUiState.Idle)
         eventFlow = MutableSharedFlow()
-
-    private val loginButtonTag = "loginButton" // Assuming Button itself has this
+private val loginButtonTag = "loginButton" // Assuming Button itself has this
     private val loadingIndicatorTag = "loadingIndicator" // Assuming CircularProgressIndicator has this
     private val errorMessageTextTag = "errorMessageText" // Assuming error Text has this
 
@@ -72,8 +70,7 @@ class LoginScreenTest {
         uiStateFlow = MutableStateFlow(LoginUiState.Idle)
         eventFlow = MutableSharedFlow() // For one-time events
  Biometric-Voting-App
-
-        every { mockViewModel.uiState } returns uiStateFlow
+      every { mockViewModel.uiState } returns uiStateFlow
         every { mockViewModel.eventFlow } returns eventFlow.asSharedFlow()
     }
 
@@ -82,9 +79,9 @@ class LoginScreenTest {
             BiometricVotingAppTheme {
                 LoginScreen(
                     viewModel = mockViewModel, // Manually passing mocked ViewModel
-
-                    viewModel = mockViewModel,
+viewModel = mockViewModel,
 Biometric-Voting-App
+
                     onNavigateToRegister = mockOnNavigateToRegister,
                     onLoginSuccess = mockOnLoginSuccess
                 )
@@ -96,6 +93,13 @@ Biometric-Voting-App
     fun loginScreen_displaysKeyElements_whenIdle() {
         uiStateFlow.value = LoginUiState.Idle
         setLoginScreenContent()
+
+
+    @Test
+    fun loginScreen_displaysKeyElements_whenIdle() {
+        uiStateFlow.value = LoginUiState.Idle
+        setLoginScreenContent()
+Biometric-Voting-App
         composeTestRule.onNodeWithText("Biometric Voting App - Login").assertIsDisplayed()
         composeTestRule.onNodeWithText("Login with Fingerprint").assertIsDisplayed().assertIsEnabled()
         composeTestRule.onNodeWithText("Not registered yet? Register here").assertIsDisplayed()
@@ -119,8 +123,6 @@ Biometric-Voting-App
         setLoginScreenContent()
 
         composeTestRule.onNodeWithText(errorMessage).assertIsDisplayed()
-
-
         composeTestRule.onNodeWithText("Biometric Voting App - Login").assertIsDisplayed() // TopAppBar
         composeTestRule.onNodeWithText("Login with Fingerprint").assertIsDisplayed().assertIsEnabled()
         composeTestRule.onNodeWithText("Not registered yet? Register here").assertIsDisplayed()
@@ -166,6 +168,7 @@ Biometric-Voting-App
         composeTestRule.onNodeWithText(errorMessage).assertIsDisplayed()
         // Button should be enabled again
  Biometric-Voting-App
+
         composeTestRule.onNodeWithText("Login with Fingerprint").assertIsDisplayed().assertIsEnabled()
     }
 
@@ -185,15 +188,14 @@ Biometric-Voting-App
 
         composeTestRule.onNodeWithText("Not registered yet? Register here").performClick()
         verify(exactly = 1) { mockOnNavigateToRegister() }
-        // Also verify that resetStateToIdle is called on the ViewModel
-Biometric-Voting-App
+ Biometric-Voting-App
         verify(exactly = 1) { mockViewModel.resetStateToIdle() }
     }
 
     @Test
     fun successfulLoginEvent_triggersOnLoginSuccessCallback() = runTest {
         val testAnonymizedId = "test-id-for-login"
-
+Biometric-Voting-App
         uiStateFlow.value = LoginUiState.Idle
         setLoginScreenContent()
 
@@ -203,7 +205,7 @@ Biometric-Voting-App
 
         composeTestRule.waitForIdle()
 
-        uiStateFlow.value = LoginUiState.Idle // Start in a state that allows login flow
+uiStateFlow.value = LoginUiState.Idle // Start in a state that allows login flow
         setLoginScreenContent()
 
         // Simulate ViewModel emitting the navigation event
@@ -213,7 +215,6 @@ Biometric-Voting-App
 
         composeTestRule.waitForIdle() // Ensure LaunchedEffect in Screen processes the event
  Biometric-Voting-App
-
         verify(timeout = 1000) { mockOnLoginSuccess(testAnonymizedId) }
         job.cancel()
     }
