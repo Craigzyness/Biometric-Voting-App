@@ -21,6 +21,7 @@ val keystoreProperties = java.util.Properties()
 if (keystorePropertiesFile.exists() && keystorePropertiesFile.isFile) {
     keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
 Biometric-Voting-App
+
 }
 
 android {
@@ -132,6 +133,8 @@ android {
 }
 
 dependencies {
+    implementation(project(":core")) // Added :core module dependency
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

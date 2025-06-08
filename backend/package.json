@@ -8,9 +8,13 @@
     "test": "cross-env NODE_ENV=test jest --testTimeout=10000 --detectOpenHandles",
     "lint": "eslint . --ignore-path .gitignore",
     "audit:ci": "npm audit --audit-level=high"
+
+  },
+
     "lint": "eslint . --ignore-path .gitignore"
 Biometric-Voting-App
 },
+
   "dependencies": {
     "express": "^4.17.1",
     "express-rate-limit": "^7.1.5",
@@ -18,10 +22,12 @@ Biometric-Voting-App
     "helmet": "^7.0.0",
     "morgan": "^1.10.0",
     "pg": "^8.7.1",
+
     "helmet": "^7.0.0",
     "morgan": "^1.10.0",
     "express-rate-limit": "^7.1.5",
 Biometric-Voting-App
+
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^4.7.1"
   },

@@ -81,7 +81,7 @@ Biometric-Voting-App
     }
 
     fun onBiometricAuthenticationFailed() {
- Biometric-Voting-App
+Biometric-Voting-App
         val errorMessage = "Biometric authentication failed. Fingerprint not recognized."
         if (BuildConfig.DEBUG) Log.w("RegistrationViewModel", errorMessage)
         _uiState.value = RegistrationUiState.Error(errorMessage)
