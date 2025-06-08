@@ -16,6 +16,10 @@ function generateRandomHex(length = 8) {
     return result;
 }
 
+// Import setupTestDatabaseSchema from db_test_helper
+const { clearAllTables, closeTestPool, getTestPool, setupTestDatabaseSchema } = require('./db_test_helper');
+
+Biometric-Voting-App
 
 // Helper function to seed election data (reusing existing one, ensuring it returns ID)
 async function seedElection(dbPool, electionData) {
@@ -31,8 +35,6 @@ async function seedElection(dbPool, electionData) {
     const now = new Date();
     const finalStartTimestamp = startTimestamp || new Date(now.getTime() - 1 * 60 * 60 * 1000).toISOString();
     const finalEndTimestamp = endTimestamp || new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
-
-
     const result = await dbPool.query(
         `INSERT INTO "Elections" (election_code, title, description, options, start_timestamp, end_timestamp, status)
          VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, options`, // Return options as well
@@ -61,12 +63,18 @@ async function seedVoter(dbPool, voterData) {
 describe('/api/v1/submitVote', () => {
     let dbPool;
 
-    beforeAll(async () => {
+beforeAll(async () => {
         dbPool = getTestPool();
         await setupTestDatabaseSchema(dbPool);
+
+    beforeAll(async () => { // Make beforeAll async
+        dbPool = getTestPool();
+        await setupTestDatabaseSchema(dbPool); // Setup schema
+Biometric-Voting-App
     });
 
     beforeEach(async () => {
+        // Clear data, but schema is already set up
         await clearAllTables();
         // Reset and set default mock for playIntegrityVerifier for each test
         playIntegrityVerifier.verifyToken.mockReset();

@@ -1,7 +1,28 @@
+backend-db-frontend-setup
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.egg-info/
+.env
+venv/
+env/
+
+Biometric-Voting-App
 # Node.js
 node_modules/
 npm-debug.log
 yarn-error.log
+backend-db-frontend-setup
+dist/
+.DS_Store
+
+# General
+*.swp
+*.swo
+.idea/
+.vscode/
+
 package-lock.json
 yarn.lock
 
@@ -44,3 +65,4 @@ dist/
 *.gem
 *.egg
 *.whl
+Biometric-Voting-App

@@ -3,6 +3,7 @@ package com.example.biometricvotingapp.ui.screens.voting
 import android.app.Application
 // import android.util.Log // Prefer Timber if it's setup
 import androidx.lifecycle.ViewModel
+// Removed ViewModelProvider import
 import androidx.lifecycle.viewModelScope
 import com.example.biometricvotingapp.data.network.dto.VoteRequest
 import com.example.biometricvotingapp.domain.usecase.SubmitVoteUseCase
@@ -14,6 +15,20 @@ import com.example.biometricvotingapp.util.PlayIntegrityException
 import com.example.biometricvotingapp.utils.SecurityUtil
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import com.example.biometricvotingapp.data.network.dto.VoteRequest
+// Removed unused repository imports
+import com.example.biometricvotingapp.domain.usecase.SubmitVoteUseCase
+import com.example.biometricvotingapp.domain.usecase.GetElectionsUseCase
+import com.example.biometricvotingapp.domain.usecase.LoginUserUseCase
+import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper
+import com.example.biometricvotingapp.utils.SecurityUtil
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+// Removed ApiService import as it's not directly used
+import com.example.biometricvotingapp.data.network.dto.VoteRequest
+import com.example.biometricvotingapp.data.repository.VotingRepository
+import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper // Import the new mapper
+Biometric-Voting-App
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -23,14 +38,21 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import android.util.Base64
 import androidx.biometric.BiometricPrompt
-// import com.example.biometricvotingapp.BuildConfig
 import timber.log.Timber
+import com.example.biometricvotingapp.BuildConfig
+import android.util.Base64 // For Base64 encoding
+import androidx.biometric.BiometricPrompt // For CryptoObject type, and error codes
+import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
+import com.example.biometricvotingapp.utils.SecurityUtil // For Crypto operations
+Biometric-Voting-App
 
 // Define UI States for VotingScreen
 sealed interface VotingUiState {
     object Idle : VotingUiState
     object AwaitingBiometrics : VotingUiState
     data class Loading(val message: String = "Processing...") : VotingUiState
+    object Loading : VotingUiState
+Biometric-Voting-App
     data class Success(val message: String) : VotingUiState
     data class Error(val message: String) : VotingUiState
 }
@@ -49,6 +71,12 @@ class VotingViewModel @Inject constructor(
     private val submitVoteUseCase: SubmitVoteUseCase,
     private val securityUtil: SecurityUtil,
     private val playIntegrityService: PlayIntegrityService
+    private val securityUtil: SecurityUtil
+
+class VotingViewModel(
+    private val application: Application, // Keep application if SecurityUtil or other utils might need it.
+    private val votingRepository: VotingRepository // Injected
+Biometric-Voting-App
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<VotingUiState>(VotingUiState.Idle)
@@ -61,6 +89,8 @@ class VotingViewModel @Inject constructor(
 
     fun onCastVoteClicked(anonymizedVoterId: String, electionId: String, selectedOption: String) {
         Timber.d("Cast Vote button clicked for election: $electionId, option: $selectedOption by voter: ${anonymizedVoterId.take(8)}")
+        if (BuildConfig.DEBUG) Log.d("VotingViewModel", "Cast Vote button clicked for election: $electionId, option: $selectedOption by voter: ${anonymizedVoterId.take(8)}")
+Biometric-Voting-App
         currentVoteArgs = Triple(anonymizedVoterId, electionId, selectedOption)
         _uiState.value = VotingUiState.AwaitingBiometrics
 
@@ -86,7 +116,7 @@ class VotingViewModel @Inject constructor(
             return
         }
 
-        val capturedArgs = currentVoteArgs
+val capturedArgs = currentVoteArgs
         if (capturedArgs == null) {
             Timber.e("Vote arguments not found after biometric success.")
             _uiState.value = VotingUiState.Error("Error: Vote arguments not found after biometric success.")
@@ -150,6 +180,45 @@ class VotingViewModel @Inject constructor(
                         "Device integrity check failed: ${playIntegrityService.getErrorMessageForCode(exception.errorCode ?: -100)} (Code: ${exception.errorCode ?: "N/A"})"
                     } else {
                         "Device integrity check failed: ${exception.message ?: "Unknown error"}"
+
+        currentVoteArgs?.let { args ->
+            val voteProofPayload = "Vote for ${args.second} at ${System.currentTimeMillis()}"
+            val encryptionResult = securityUtil.encryptData(voteProofPayload, cryptoObjectFromResult)
+
+            if (encryptionResult == null) {
+                if (BuildConfig.DEBUG) Log.e("VotingViewModel", "Failed to encrypt vote proof.")
+                _uiState.value = VotingUiState.Error("Error securing vote. Please try again.")
+                return@let
+            }
+
+            val (ivBytes, encryptedProofBytes) = encryptionResult
+            val ivString = Base64.encodeToString(ivBytes, Base64.NO_WRAP)
+            val encryptedProofString = Base64.encodeToString(encryptedProofBytes, Base64.NO_WRAP)
+
+            viewModelScope.launch {
+                val voteRequest = VoteRequest(
+                    anonymizedVoterId = args.first,
+                    electionId = args.second,
+                    selectedOption = args.third,
+                    encryptedProof = encryptedProofString,
+                    iv = ivString
+                )
+                val voteResult = submitVoteUseCase(voteRequest)
+
+                voteResult.fold(
+                    onSuccess = { backendResponse ->
+                        val newSuccessMessage = "Vote submitted successfully and recorded anonymously!"
+                        if (BuildConfig.DEBUG) Log.i("VotingViewModel", "Backend vote submission successful. UseCase response: ${backendResponse.message}, New msg: $newSuccessMessage")
+                        _uiState.value = VotingUiState.Success(newSuccessMessage)
+                        viewModelScope.launch {
+                            _eventFlow.emit(VotingViewEvent.VoteSubmissionSuccessAndNavigate(newSuccessMessage))
+                        }
+                    },
+                    onFailure = { error ->
+                        val errorMessage = "Error: Vote Submission Failed - ${error.message}"
+                        if (BuildConfig.DEBUG) Log.e("VotingViewModel", "Backend vote submission error via UseCase: ${error.message}")
+                        _uiState.value = VotingUiState.Error(errorMessage)
+Biometric-Voting-App
                     }
                     _uiState.value = VotingUiState.Error(errorMessage)
                 }
@@ -158,14 +227,24 @@ class VotingViewModel @Inject constructor(
     }
 
     fun onBiometricAuthenticationError(errorCode: Int, errString: CharSequence) {
-        val errorMessage = BiometricErrorMapper.mapBiometricErrorCodeToString(errorCode, errString)
+val errorMessage = BiometricErrorMapper.mapBiometricErrorCodeToString(errorCode, errString)
         Timber.e("Biometric Auth Error $errorCode: $errString. Mapped to: $errorMessage")
+        // Use the centralized BiometricErrorMapper
+Biometric-Voting-App
+        val errorMessage = BiometricErrorMapper.mapBiometricErrorCodeToString(errorCode, errString)
+        if (BuildConfig.DEBUG) Log.e("VotingViewModel", "Biometric Auth Error $errorCode: $errString. Mapped to: $errorMessage")
+Biometric-Voting-App
         _uiState.value = VotingUiState.Error(errorMessage)
     }
 
     fun onBiometricAuthenticationFailed() {
         val errorMessage = "Vote confirmation failed. Fingerprint not recognized."
         Timber.w(errorMessage)
+        // This callback means the biometric was valid (e.g. a fingerprint) but not recognized.
+Biometric-Voting-App
+        val errorMessage = "Vote confirmation failed. Fingerprint not recognized."
+        if (BuildConfig.DEBUG) Log.w("VotingViewModel", errorMessage)
+Biometric-Voting-App
         _uiState.value = VotingUiState.Error(errorMessage)
     }
 
@@ -173,3 +252,5 @@ class VotingViewModel @Inject constructor(
         _uiState.value = VotingUiState.Idle
     }
 }
+
+// ViewModel Factory has been removed as Hilt will manage ViewModel creation.
