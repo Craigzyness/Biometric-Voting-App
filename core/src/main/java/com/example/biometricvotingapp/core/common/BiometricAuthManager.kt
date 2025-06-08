@@ -1,17 +1,17 @@
-package com.example.biometricvotingapp.utils
+package com.example.biometricvotingapp.core.common // Updated package
 
 import android.content.Context
-import android.os.Build
+import android.os.Build // Keep for potential future use, though not directly used in this version
 import android.util.Log
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL // Optional fallback
-import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
+import com.example.biometricvotingapp.BuildConfig // Assuming BuildConfig is accessible from :core
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
-import androidx.fragment.app.FragmentActivity // Required for BiometricPrompt
+import androidx.fragment.app.FragmentActivity
 
 /**
- * BiometricManager.kt
+ * BiometricAuthManager.kt
  *
  * Purpose: Handles biometric authentication logic using Android's BiometricPrompt.
  * Adapted from the initial project documentation.
@@ -25,9 +25,6 @@ class BiometricAuthManager(private val context: Context) {
         private const val TAG = "BiometricAuthManager"
     }
 
-    /**
-     * Checks if biometric authentication (specifically BIOMETRIC_STRONG) is available on the device.
-     */
     fun canAuthenticateWithBiometrics(): BiometricAvailabilityStatus {
         return when (biometricManager.canAuthenticate(BIOMETRIC_STRONG)) {
             androidx.biometric.BiometricManager.BIOMETRIC_SUCCESS -> {
@@ -61,24 +58,17 @@ class BiometricAuthManager(private val context: Context) {
         }
     }
 
-    /**
-     * Creates BiometricPrompt.PromptInfo for user registration.
-     */
     private fun createRegistrationPromptInfo(): BiometricPrompt.PromptInfo {
         return BiometricPrompt.PromptInfo.Builder()
             .setTitle("Register with Fingerprint")
             .setSubtitle("Confirm fingerprint to create your secure, anonymized voting ID")
             .setDescription("Place your finger on the sensor. Your fingerprint data stays on this device and is used to generate an anonymized ID.")
-            .setNegativeButtonText("Cancel") // User can cancel the biometric prompt
-            .setConfirmationRequired(true) // Requires user to explicitly confirm after successful scan (e.g. tap a button in the prompt) - recommended for sensitive operations
-            // .setAllowedAuthenticators(BIOMETRIC_STRONG or DEVICE_CREDENTIAL) // Example if allowing device credentials as fallback
+            .setNegativeButtonText("Cancel")
+            .setConfirmationRequired(true)
             .setAllowedAuthenticators(BIOMETRIC_STRONG)
             .build()
     }
 
-    /**
-     * Creates BiometricPrompt.PromptInfo for user login.
-     */
     private fun createLoginPromptInfo(): BiometricPrompt.PromptInfo {
         return BiometricPrompt.PromptInfo.Builder()
             .setTitle("Login with Fingerprint")
@@ -88,19 +78,10 @@ class BiometricAuthManager(private val context: Context) {
             .build()
     }
 
-
-    /**
-     * Shows the biometric prompt for registration.
-     *
-     * @param activity The FragmentActivity that hosts the prompt.
-     * @param onSuccess Callback invoked when authentication is successful. The AuthenticationResult is passed.
-     * @param onError Callback invoked when an unrecoverable error occurs. An error message string is passed.
-     * @param onFailed Callback invoked when authentication fails (e.g., fingerprint not recognized).
-     */
     fun promptForRegistration(
         activity: FragmentActivity,
         onSuccess: (BiometricPrompt.AuthenticationResult) -> Unit,
-        onError: (String) -> Unit,
+        onError: (String) -> Unit, // Changed from (Int, CharSequence) to just String for simplicity if mapper is used by caller
         onFailed: () -> Unit
     ) {
         val promptInfo = createRegistrationPromptInfo()
@@ -115,7 +96,7 @@ class BiometricAuthManager(private val context: Context) {
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
                     if (BuildConfig.DEBUG) Log.e(TAG, "Registration Biometric Authentication Error: $errorCode - $errString")
-                    onError(errString.toString())
+                    onError(errString.toString()) // Pass CharSequence as String
                 }
 
                 override fun onAuthenticationFailed() {
@@ -124,18 +105,13 @@ class BiometricAuthManager(private val context: Context) {
                     onFailed()
                 }
             })
-
         biometricPrompt.authenticate(promptInfo)
     }
 
-    /**
-     * Shows the biometric prompt for login.
-     * (Similar to promptForRegistration, but uses createLoginPromptInfo)
-     */
     fun promptForLogin(
         activity: FragmentActivity,
         onSuccess: (BiometricPrompt.AuthenticationResult) -> Unit,
-        onError: (String) -> Unit,
+        onError: (String) -> Unit, // Changed from (Int, CharSequence) to just String
         onFailed: () -> Unit
     ) {
         val promptInfo = createLoginPromptInfo()
@@ -150,7 +126,7 @@ class BiometricAuthManager(private val context: Context) {
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
                     if (BuildConfig.DEBUG) Log.e(TAG, "Login Biometric Authentication Error: $errorCode - $errString")
-                    onError(errString.toString())
+                    onError(errString.toString()) // Pass CharSequence as String
                 }
 
                 override fun onAuthenticationFailed() {
@@ -159,41 +135,27 @@ class BiometricAuthManager(private val context: Context) {
                     onFailed()
                 }
             })
-
         biometricPrompt.authenticate(promptInfo)
     }
 
-    /**
-     * Creates BiometricPrompt.PromptInfo for vote confirmation.
-     */
     private fun createVoteConfirmationPromptInfo(electionTitle: String, selectedOption: String): BiometricPrompt.PromptInfo {
         return BiometricPrompt.PromptInfo.Builder()
             .setTitle("Confirm Your Vote")
             .setSubtitle("Election: $electionTitle")
             .setDescription("Confirm with your fingerprint to cast your vote for: \"$selectedOption\". This action is final for this session.")
             .setNegativeButtonText("Cancel")
-            .setConfirmationRequired(true) // Recommended for sensitive actions
+            .setConfirmationRequired(true)
             .setAllowedAuthenticators(BIOMETRIC_STRONG)
             .build()
     }
 
-    /**
-     * Shows the biometric prompt for vote confirmation.
-     *
-     * @param activity The FragmentActivity that hosts the prompt.
-     * @param electionTitle The title of the election.
-     * @param selectedOption The option the user has selected.
-     * @param onSuccess Callback invoked when authentication is successful.
-     * @param onError Callback invoked when an unrecoverable error occurs.
-     * @param onFailed Callback invoked when authentication fails.
-     */
     fun promptForVoteConfirmation(
         activity: FragmentActivity,
         electionTitle: String,
         selectedOption: String,
-        cryptoObject: BiometricPrompt.CryptoObject?, // New parameter
+        cryptoObject: BiometricPrompt.CryptoObject?,
         onSuccess: (BiometricPrompt.AuthenticationResult) -> Unit,
-        onError: (String) -> Unit,
+        onError: (String) -> Unit, // Changed from (Int, CharSequence) to just String
         onFailed: () -> Unit
     ) {
         val promptInfo = createVoteConfirmationPromptInfo(electionTitle, selectedOption)
@@ -208,7 +170,7 @@ class BiometricAuthManager(private val context: Context) {
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
                     if (BuildConfig.DEBUG) Log.e(TAG, "Vote Confirmation Biometric Authentication Error: $errorCode - $errString")
-                    onError(errString.toString())
+                    onError(errString.toString()) // Pass CharSequence as String
                 }
 
                 override fun onAuthenticationFailed() {

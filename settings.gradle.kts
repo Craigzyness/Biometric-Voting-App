@@ -14,4 +14,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "BiometricVotingApp"
-include(":app")
+include(":app", ":core")
