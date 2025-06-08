@@ -13,6 +13,10 @@ import com.example.biometricvotingapp.domain.usecase.UserNotRegisteredException
 import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator
+import com.example.biometricvotingapp.presentation.common.BiometricErrorMapper // Import the new mapper
+// Removed BiometricAuthManager and BiometricAvailabilityStatus imports as they are not directly used in this VM
+Biometric-Voting-App
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -38,6 +42,8 @@ sealed class LoginViewEvent {
 class LoginViewModel @Inject constructor(
     private val application: Application,
     private val loginUserUseCase: LoginUserUseCase
+private val anonymizedIdGenerator: AnonymizedIdGenerator
+Biometric-Voting-App
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<LoginUiState>(LoginUiState.Idle)
@@ -49,6 +55,9 @@ class LoginViewModel @Inject constructor(
     fun onLoginClicked() {
         if (BuildConfig.DEBUG) Log.d("LoginViewModel", "Login button clicked")
         _uiState.value = LoginUiState.Loading
+
+      _uiState.value = LoginUiState.Loading // Indicate loading before showing prompt
+Biometric-Voting-App
         viewModelScope.launch {
             _eventFlow.emit(LoginViewEvent.ShowBiometricPrompt)
         }
@@ -82,17 +91,21 @@ class LoginViewModel @Inject constructor(
     }
 
     fun onBiometricAuthenticationError(errorCode: Int, errString: CharSequence) {
+Biometric-Voting-App
         val errorMessage = BiometricErrorMapper.mapBiometricErrorCodeToString(errorCode, errString)
         if (BuildConfig.DEBUG) Log.e("LoginViewModel", "Biometric Auth Error $errorCode: $errString. Mapped to: $errorMessage")
         _uiState.value = LoginUiState.Error(errorMessage)
     }
 
     fun onBiometricAuthenticationError(message: String) {
+    fun onBiometricAuthenticationError(message: String) { // Overload for non-API errors from UI (e.g. activity context null)
+Biometric-Voting-App
         if (BuildConfig.DEBUG) Log.e("LoginViewModel", "Biometric Auth Error: $message")
         _uiState.value = LoginUiState.Error(message)
     }
 
     fun onBiometricAuthenticationFailed() {
+Biometric-Voting-App
         val errorMessage = "Login Failed: Fingerprint not recognized. Please try again."
         if (BuildConfig.DEBUG) Log.w("LoginViewModel", errorMessage)
         _uiState.value = LoginUiState.Error(errorMessage)

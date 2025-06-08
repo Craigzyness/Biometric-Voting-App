@@ -1,0 +1,7 @@
+{
+  "pool_private_keys": [
+    "0xYOUR_GANACHE_PRIVATE_KEY_1_HERE",
+    "0xYOUR_GANACHE_PRIVATE_KEY_2_HERE",
+    "0xYOUR_GANACHE_PRIVATE_KEY_3_HERE"
+  ]
+}
