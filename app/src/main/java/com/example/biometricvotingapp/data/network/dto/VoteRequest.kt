@@ -12,5 +12,9 @@ data class VoteRequest(
     @SerializedName("encrypted_proof")
     val encryptedProof: String?, // Base64 encoded encrypted data
     @SerializedName("iv")
-    val iv: String? // Base64 encoded Initialization Vector
+    val iv: String?, // Base64 encoded Initialization Vector
+    @SerializedName("playIntegrityToken") // New field
+    val playIntegrityToken: String,
+    @SerializedName("playIntegrityNonce") // New field
+    val playIntegrityNonce: String
 )

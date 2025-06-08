@@ -1,4 +1,4 @@
-package com.example.biometricvotingapp.domain.model
+package com.example.biometricvotingapp.core.domain.model // Updated package
 
 import java.util.UUID // For generating unique default IDs if needed
 

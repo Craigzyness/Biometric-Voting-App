@@ -1,6 +1,7 @@
 const request = require('supertest');
 const { app, pool } = require('../server'); // Import app and pool
-const { clearAllTables, closeTestPool, getTestPool } = require('./db_test_helper');
+// Import setupTestDatabaseSchema from db_test_helper
+const { clearAllTables, closeTestPool, getTestPool, setupTestDatabaseSchema } = require('./db_test_helper');
 
 // Helper function to seed election data
 async function seedElection(dbPool, electionData) {
@@ -23,11 +24,13 @@ async function seedElection(dbPool, electionData) {
 describe('/api/v1/elections', () => {
     let dbPool;
 
-    beforeAll(() => {
+    beforeAll(async () => { // Make beforeAll async
         dbPool = getTestPool(); // Get the test pool instance
+        await setupTestDatabaseSchema(dbPool); // Setup schema
     });
 
     beforeEach(async () => {
+        // Clear data, but schema is already set up
         await clearAllTables();
     });
 
@@ -285,11 +288,7 @@ describe('/api/v1/elections', () => {
     // --- BEGIN Test for Index Creation ---
     describe('Database Initialization Checks for Elections', () => {
         it('should have created the idx_elections_status_start_end index on the Elections table', async () => {
-            // This test relies on initializeDatabase() having been run by the time the app starts
-            // or specifically called if needed for a test setup.
-            // The server.js already calls initializeDatabase when not in 'test' mode for app.listen,
-            // but for tests, the schema setup is implicit via the main pool or explicit calls.
-            // We assume the schema is initialized for the test DB.
+            // This test relies on setupTestDatabaseSchema having been run in beforeAll.
             const dbPool = getTestPool();
             const indexCheckQuery = `
                 SELECT 1

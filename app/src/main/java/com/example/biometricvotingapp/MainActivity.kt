@@ -9,17 +9,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext // Needed for Application context
-import androidx.lifecycle.viewmodel.compose.viewModel // Needed for viewModel() delegate
-import com.example.biometricvotingapp.BuildConfig // Import BuildConfig
-import com.example.biometricvotingapp.domain.model.Election // Import Election model
+// Removed LocalContext import for Application as it's no longer needed for manual factory instantiation
+import androidx.hilt.navigation.compose.hiltViewModel // Import for hiltViewModel()
+import com.example.biometricvotingapp.BuildConfig
+import com.example.biometricvotingapp.domain.model.Election
 import com.example.biometricvotingapp.ui.screens.ElectionListScreen
 import com.example.biometricvotingapp.ui.screens.LoginScreen
 import com.example.biometricvotingapp.ui.screens.RegistrationScreen
-import com.example.biometricvotingapp.ui.screens.VotingScreen // Import VotingScreen
-// TODO: Replace with your actual theme if you have one defined, e.g., in ui.theme package
-// import com.example.biometricvotingapp.ui.theme.BiometricVotingAppTheme
-// Removed getSampleElections import as it's no longer used here.
+import com.example.biometricvotingapp.ui.screens.VotingScreen
+import dagger.hilt.android.AndroidEntryPoint // Import for Hilt
 
 /**
  * MainActivity.kt
@@ -33,15 +31,15 @@ sealed class Screen {
     object Registration : Screen()
     object Login : Screen()
     object ElectionList : Screen()
-    data class Voting(val election: Election) : Screen() // Added Voting screen with Election data
+    data class Voting(val election: Election) : Screen()
 }
 
+@AndroidEntryPoint // Annotate Activity with @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            // Using a simple MaterialTheme. Replace with your app's specific theme if available.
-            MaterialTheme { // Or YourAppTheme { ... }
+            MaterialTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -55,93 +53,78 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppNavigator() {
-    // State to keep track of the current screen
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Registration) }
-    var currentAnonymizedId by remember { mutableStateOf<String?>(null) } // Store the anonymized ID
+    // This state is still needed if VotingScreen takes anonymizedVoterId directly.
+    // ViewModels will use their own LoginUserUseCase for internal ID needs.
+    var currentAnonymizedIdForVotingScreen by remember { mutableStateOf<String?>(null) }
 
-    // Create and remember VotingRepository instance
-    val votingRepository = remember {
-        com.example.biometricvotingapp.data.repository.VotingRepository(
-            com.example.biometricvotingapp.data.network.ApiService.instance
-        )
-    }
-    // Get Application context for ViewModel factories
-    val application = LocalContext.current.applicationContext as android.app.Application
+    // Manual instantiation of repository and application context is no longer needed here
+    // as Hilt will provide dependencies to ViewModels.
 
-    when (val screen = currentScreen) { // Use 'screen' for smart casting
+    when (val screen = currentScreen) {
         is Screen.Registration -> {
-            val factory = com.example.biometricvotingapp.ui.screens.registration.RegistrationViewModelFactory(
-                application,
-                com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator,
-                votingRepository
-            )
-            val viewModel: com.example.biometricvotingapp.ui.screens.registration.RegistrationViewModel = viewModel(factory = factory)
+            // Obtain ViewModel using Hilt
+            val viewModel: com.example.biometricvotingapp.ui.screens.registration.RegistrationViewModel = hiltViewModel()
             RegistrationScreen(
                 viewModel = viewModel,
                 onNavigateToLogin = { currentScreen = Screen.Login },
                 onRegistrationSuccess = { generatedId ->
                     if (BuildConfig.DEBUG) Log.i("AppNavigator", "Registration successful. Generated ID (first 8): ${generatedId.take(8)}")
-                    currentAnonymizedId = generatedId // Store the ID
+                    currentAnonymizedIdForVotingScreen = generatedId // Store for VotingScreen
                     currentScreen = Screen.ElectionList
                 }
             )
         }
         is Screen.Login -> {
-            val factory = com.example.biometricvotingapp.ui.screens.login.LoginViewModelFactory(
-                application,
-                com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator
-            )
-            val viewModel: com.example.biometricvotingapp.ui.screens.login.LoginViewModel = viewModel(factory = factory)
+            // Obtain ViewModel using Hilt
+            val viewModel: com.example.biometricvotingapp.ui.screens.login.LoginViewModel = hiltViewModel()
             LoginScreen(
                 viewModel = viewModel,
                 onNavigateToRegister = { currentScreen = Screen.Registration },
-                onLoginSuccess = { generatedId -> // Renamed from anonymizedId for clarity from VM event
-                    if (BuildConfig.DEBUG) Log.i("AppNavigator", "Login successful. Anonymized ID (first 8): ${generatedId.take(8)}")
-                    currentAnonymizedId = generatedId // Store the ID
+                onLoginSuccess = { loggedInId ->
+                    if (BuildConfig.DEBUG) Log.i("AppNavigator", "Login successful. Anonymized ID (first 8): ${loggedInId.take(8)}")
+                    currentAnonymizedIdForVotingScreen = loggedInId // Store for VotingScreen
                     currentScreen = Screen.ElectionList
                 }
             )
         }
         is Screen.ElectionList -> {
-            val factory = com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewModelFactory(
-                application,
-                votingRepository,
-                currentAnonymizedId // Pass the anonymized ID
-            )
-            val viewModel: com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewModel = viewModel(factory = factory)
+            // Obtain ViewModel using Hilt. ElectionListViewModel now fetches its own voterId.
+            val viewModel: com.example.biometricvotingapp.ui.screens.electionlist.ElectionListViewModel = hiltViewModel()
             ElectionListScreen(
                 viewModel = viewModel,
                 onElectionClicked = { selectedElection ->
                     if (BuildConfig.DEBUG) Log.d("AppNavigator", "Election clicked: ${selectedElection.title}")
-                    if (currentAnonymizedId == null) {
-                        if (BuildConfig.DEBUG) Log.e("AppNavigator", "Error: User anonymized ID is null. Cannot navigate to Voting screen. Returning to Login.")
-                        currentScreen = Screen.Login // Or handle error appropriately
+                    // Check if ID for VotingScreen is available (it should be if user reached ElectionList)
+                    if (currentAnonymizedIdForVotingScreen == null) {
+                        if (BuildConfig.DEBUG) Log.e("AppNavigator", "Error: User anonymized ID for VotingScreen is null. Returning to Login.")
+                        currentScreen = Screen.Login
                     } else {
                         currentScreen = Screen.Voting(selectedElection)
                     }
                 },
                 onLogout = {
                     if (BuildConfig.DEBUG) Log.i("AppNavigator", "Logout requested.")
-                    currentAnonymizedId = null
+                    currentAnonymizedIdForVotingScreen = null
                     currentScreen = Screen.Login
                 }
             )
         }
         is Screen.Voting -> {
-            val voterId = currentAnonymizedId ?: run {
-                if (BuildConfig.DEBUG) Log.e("AppNavigator", "Critical error: Navigated to VotingScreen with null anonymizedVoterId. Redirecting to Login.")
+            val voterId = currentAnonymizedIdForVotingScreen ?: run {
+                if (BuildConfig.DEBUG) Log.e("AppNavigator", "Critical error: Navigated to VotingScreen with null currentAnonymizedIdForVotingScreen. Redirecting to Login.")
                 currentScreen = Screen.Login
-                return@AppNavigator // Corrected return for Composable
+                return@AppNavigator
             }
-            val factory = com.example.biometricvotingapp.ui.screens.voting.VotingViewModelFactory(application, votingRepository)
-            val viewModel: com.example.biometricvotingapp.ui.screens.voting.VotingViewModel = viewModel(factory = factory)
+            // Obtain ViewModel using Hilt
+            val viewModel: com.example.biometricvotingapp.ui.screens.voting.VotingViewModel = hiltViewModel()
             VotingScreen(
                 viewModel = viewModel,
-                anonymizedVoterId = voterId,
+                anonymizedVoterId = voterId, // VotingScreen still takes this for onCastVoteClicked
                 election = screen.election,
                 onVoteConfirmedAndSubmitted = { confirmedElection, selectedOption ->
                     if (BuildConfig.DEBUG) Log.i("AppNavigator", "Vote confirmed and submitted for ${confirmedElection.title}, option: $selectedOption")
-                    currentScreen = Screen.ElectionList // Navigate back to election list
+                    currentScreen = Screen.ElectionList
                 },
                 onNavigateBack = {
                     if (BuildConfig.DEBUG) Log.d("AppNavigator", "Navigating back from VotingScreen to ElectionList.")
@@ -151,14 +134,3 @@ fun AppNavigator() {
         }
     }
 }
-
-// It's good practice to have a theme defined. If you don't have one,
-// MaterialTheme {} provides a default. For a real app, create something like:
-// package com.example.biometricvotingapp.ui.theme
-// @Composable
-// fun BiometricVotingAppTheme(content: @Composable () -> Unit) {
-//     MaterialTheme(
-//         // Define colorScheme, typography, shapes if needed
-//         content = content
-//     )
-// }

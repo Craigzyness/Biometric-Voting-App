@@ -1,4 +1,4 @@
-package com.example.biometricvotingapp.domain.security
+package com.example.biometricvotingapp.core.common // Updated package
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
