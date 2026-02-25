@@ -4,6 +4,7 @@ const { Pool } = require('pg');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const { body, validationResult } = require('express-validator');
 const logger = require('./logger');
 const playIntegrityVerifier = require('./play_integrity_verifier'); // Added Play Integrity Verifier
 
@@ -171,24 +172,33 @@ const voteSubmissionLimiter = rateLimit({
     message: "Too many votes submitted from this IP, please try again after an hour"
 });
 
+// Middleware to handle validation errors
+const handleValidationErrors = (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        const errorMessages = errors.array().map(err => err.msg).join(' ');
+        logger.warn('Validation error:', { errors: errors.array(), body: req.body });
+        return res.status(400).json({ error: errorMessages });
+    }
+    next();
+};
+
 apiRouter.use(generalApiLimiter);
 
-apiRouter.post('/register', registrationLimiter, async (req, res) => {
+// Validation rules for /register
+const registerValidation = [
+    body('anonymizedVoterId')
+        .notEmpty().withMessage('anonymizedVoterId is required and must be a non-empty string.')
+        .isString().withMessage('anonymizedVoterId must be a string.')
+        .trim()
+        .isLength({ max: 255 }).withMessage('anonymizedVoterId must not exceed 255 characters.')
+        .matches(sha256HexRegex).withMessage('anonymizedVoterId must be a valid 64-character hex string.'),
+];
+
+apiRouter.post('/register', registrationLimiter, registerValidation, handleValidationErrors, async (req, res) => {
     const { anonymizedVoterId } = req.body;
-    if (!anonymizedVoterId || typeof anonymizedVoterId !== 'string' || anonymizedVoterId.trim() === '') {
-        logger.warn('Invalid registration attempt: Missing or empty anonymizedVoterId.', { body: req.body });
-        return res.status(400).json({ error: "Invalid or missing anonymizedVoterId." });
-    }
-    const trimmedAnonymizedVoterId = anonymizedVoterId.trim();
-    if (trimmedAnonymizedVoterId.length > 255) {
-        logger.warn(`Invalid registration attempt: anonymizedVoterId too long. Length: ${trimmedAnonymizedVoterId.length}, ID: ${getLoggableId(trimmedAnonymizedVoterId)}`);
-        return res.status(400).json({ error: "anonymizedVoterId must not exceed 255 characters." });
-    }
-    if (!sha256HexRegex.test(trimmedAnonymizedVoterId)) {
-        logger.warn(`Invalid registration attempt: anonymizedVoterId invalid format. ID: ${getLoggableId(trimmedAnonymizedVoterId)}`);
-        return res.status(400).json({ error: "anonymizedVoterId must be a valid 64-character hex string." });
-    }
-    const finalNormalizedVoterId = trimmedAnonymizedVoterId.toLowerCase();
+    const finalNormalizedVoterId = anonymizedVoterId.trim().toLowerCase();
+
     try {
         let result = await pool.query('SELECT * FROM Voters WHERE anonymized_voter_id = $1', [finalNormalizedVoterId]);
         if (result.rows.length > 0) {
@@ -283,85 +293,84 @@ apiRouter.get('/elections', async (req, res) => {
     }
 });
 
-apiRouter.post('/submitVote', voteSubmissionLimiter, async (req, res) => {
+// Validation rules for /submitVote
+const submitVoteValidation = [
+    body('anonymizedVoterId')
+        .notEmpty().withMessage('anonymizedVoterId is required and must be a non-empty string.')
+        .isString().withMessage('anonymizedVoterId must be a string.')
+        .trim()
+        .isLength({ max: 255 }).withMessage('anonymizedVoterId must not exceed 255 characters.')
+        .matches(sha256HexRegex).withMessage('anonymizedVoterId must be a valid 64-character hex string.'),
+
+    body('electionId')
+        .notEmpty().withMessage('electionId is required and must be a non-empty string.')
+        .isString().withMessage('electionId must be a string.')
+        .trim()
+        .matches(uuidRegex).withMessage('electionId must be a valid UUID.'),
+
+    body('selectedOption')
+        .notEmpty().withMessage('selectedOption is required and must be a non-empty string.')
+        .isString().withMessage('selectedOption must be a string.')
+        .trim()
+        .isLength({ max: 255 }).withMessage('selectedOption must not exceed 255 characters.'),
+
+    body('playIntegrityToken')
+        .notEmpty().withMessage('playIntegrityToken is required and must be a non-empty string.')
+        .isString().withMessage('playIntegrityToken must be a string.')
+        .trim(),
+
+    body('playIntegrityNonce')
+        .notEmpty().withMessage('playIntegrityNonce is required and must be a non-empty string.')
+        .isString().withMessage('playIntegrityNonce must be a string.')
+        .trim(),
+
+    body('encryptedProof')
+        .optional()
+        .isString().withMessage('If provided, encryptedProof must be a string.')
+        .trim()
+        .notEmpty().withMessage('If provided as a string, encryptedProof must not be empty.')
+        .matches(base64Regex).withMessage('If provided, encryptedProof must be a valid Base64 encoded string.'),
+
+    body('iv')
+        .optional()
+        .isString().withMessage('If provided, iv must be a string.')
+        .trim()
+        .notEmpty().withMessage('If provided as a string, iv must not be empty.')
+        .matches(base64Regex).withMessage('If provided, iv must be a valid Base64 encoded string.'),
+
+    // Custom validator to ensure encryptedProof and iv are present together or not at all
+    body().custom((value) => {
+        const hasEncryptedProof = !!value.encryptedProof;
+        const hasIv = !!value.iv;
+        if (hasEncryptedProof !== hasIv) {
+            throw new Error('encryptedProof and iv must be provided together as non-empty strings, or not at all.');
+        }
+        return true;
+    }),
+];
+
+apiRouter.post('/submitVote', voteSubmissionLimiter, submitVoteValidation, handleValidationErrors, async (req, res) => {
     const {
         anonymizedVoterId,
         electionId,
         selectedOption,
         encryptedProof,
         iv,
-        playIntegrityToken, // New field
-        playIntegrityNonce  // New field
+        playIntegrityToken,
+        playIntegrityNonce
     } = req.body;
-    let loggableVoterId = '[ID_NOT_VALID_YET]';
 
-    const errors = [];
-    let finalAnonymizedVoterId = '';
-    if (!anonymizedVoterId || typeof anonymizedVoterId !== 'string' || anonymizedVoterId.trim() === '') {
-        errors.push("anonymizedVoterId is required and must be a non-empty string.");
-    } else {
-        const trimmedVoterId = anonymizedVoterId.trim();
-        if (trimmedVoterId.length > 255) { errors.push("anonymizedVoterId must not exceed 255 characters."); }
-        if (!sha256HexRegex.test(trimmedVoterId)) { errors.push("anonymizedVoterId must be a valid 64-character hex string."); }
-        else {
-            finalAnonymizedVoterId = trimmedVoterId.toLowerCase(); // Normalize here after format validation
-            loggableVoterId = getLoggableId(finalAnonymizedVoterId); // Update for logging
-        }
-    }
+    const finalAnonymizedVoterId = anonymizedVoterId.trim().toLowerCase();
+    const loggableVoterId = getLoggableId(finalAnonymizedVoterId);
 
-    let finalElectionId = '';
-    if (!electionId || typeof electionId !== 'string' || electionId.trim() === '') { // Added check for empty string
-        errors.push("electionId is required and must be a non-empty string.");
-    } else {
-        finalElectionId = electionId.trim();
-        if (!uuidRegex.test(finalElectionId)) { errors.push("electionId must be a valid UUID."); }
-    }
-
-    let finalSelectedOption = '';
-    if (!selectedOption || typeof selectedOption !== 'string' || selectedOption.trim() === '') {
-        errors.push("selectedOption is required and must be a non-empty string.");
-    } else {
-        finalSelectedOption = selectedOption.trim();
-        if (finalSelectedOption.length > 255) { errors.push("selectedOption must not exceed 255 characters."); }
-    }
-
-    // Validation for Play Integrity fields
-    if (!playIntegrityToken || typeof playIntegrityToken !== 'string' || playIntegrityToken.trim() === '') {
-        errors.push('playIntegrityToken is required and must be a non-empty string.');
-    }
-    if (!playIntegrityNonce || typeof playIntegrityNonce !== 'string' || playIntegrityNonce.trim() === '') {
-        errors.push('playIntegrityNonce is required and must be a non-empty string.');
-    }
-
-    const hasEncryptedProof = encryptedProof !== undefined && encryptedProof !== null;
-    let proofIsNonEmptyString = false;
-    if (hasEncryptedProof) {
-        if (typeof encryptedProof !== 'string') { errors.push("If provided, encryptedProof must be a string."); }
-        else if (encryptedProof.trim() === '') { errors.push("If provided as a string, encryptedProof must not be empty."); }
-        else { proofIsNonEmptyString = true; if (!base64Regex.test(encryptedProof.trim())) { errors.push("If provided, encryptedProof must be a valid Base64 encoded string."); } }
-    }
-    const hasIv = iv !== undefined && iv !== null;
-    let ivIsNonEmptyString = false;
-    if (hasIv) {
-        if (typeof iv !== 'string') { errors.push("If provided, iv must be a string."); }
-        else if (iv.trim() === '') { errors.push("If provided as a string, iv must not be empty."); }
-        else { ivIsNonEmptyString = true; if (!base64Regex.test(iv.trim())) { errors.push("If provided, iv must be a valid Base64 encoded string."); } }
-    }
-    if (proofIsNonEmptyString !== ivIsNonEmptyString) { errors.push("encryptedProof and iv must be provided together as non-empty strings, or not at all."); }
-
-    if (errors.length > 0) {
-        logger.warn(`Invalid vote submission request for voter: ${loggableVoterId}, election: ${finalElectionId || '[ELECTION_ID_INVALID]'}`, { errors: errors, body: req.body });
-        return res.status(400).json({ error: errors.join(" ") });
-    }
-
-    const finalEncryptedProof = proofIsNonEmptyString ? encryptedProof.trim() : null;
-    const finalIv = ivIsNonEmptyString ? iv.trim() : null;
+    const finalElectionId = electionId.trim();
+    const finalSelectedOption = selectedOption.trim();
+    const finalEncryptedProof = encryptedProof ? encryptedProof.trim() : null;
+    const finalIv = iv ? iv.trim() : null;
 
     try {
         logger.info(`Initiating Play Integrity check for submitVote from voter: ${loggableVoterId}`);
-        // const integrityResult = await playIntegrityVerifier.verifyToken(playIntegrityToken.trim(), playIntegrityNonce.trim());
-        // For now, this is a placeholder. In a real scenario, the verifyToken function would be called here.
-        // To make the code runnable without full implementation of verifyToken's dependencies (like Google API client setup for backend):
+
         let integrityResult = { isValid: process.env.NODE_ENV !== 'production' }; // Bypass in non-prod for now
         if (process.env.PERFORM_PLAY_INTEGRITY_CHECK === 'true') { // Allow forcing check via env var
              integrityResult = await playIntegrityVerifier.verifyToken(playIntegrityToken.trim(), playIntegrityNonce.trim());
@@ -369,7 +378,6 @@ apiRouter.post('/submitVote', voteSubmissionLimiter, async (req, res) => {
             // In production, if not explicitly told to skip, perform the check.
              integrityResult = await playIntegrityVerifier.verifyToken(playIntegrityToken.trim(), playIntegrityNonce.trim());
         }
-
 
         if (!integrityResult.isValid) {
             logger.warn(`Play Integrity check failed for voter ${loggableVoterId}: ${integrityResult.error || 'Unknown integrity failure'}`);

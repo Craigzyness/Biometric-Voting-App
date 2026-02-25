@@ -1,0 +1,32 @@
+# Ignore all by default
+*
+
+# Allow app source code
+!app/
+!backend/
+!core/
+!docs/
+!README.md
+!LICENSE
+!package.json
+!package-lock.json
+
+# Ignore build artifacts
+build/
+dist/
+node_modules/
+.git/
+.github/
+.idea/
+.vscode/
+legacy/
+logs/
+coverage/
+npm-debug.log
+yarn-error.log
+.DS_Store
+Thumbs.db
+
+# Ignore test files from Docker build
+**/*.test.js
+**/__tests__
