@@ -16,6 +16,8 @@ yarn-error.log
 backend-db-frontend-setup
 dist/
 .DS_Store
+backend/logs/
+*.log
 
 # General
 *.swp
