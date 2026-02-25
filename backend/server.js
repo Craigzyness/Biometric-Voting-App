@@ -4,97 +4,46 @@ const { Pool } = require('pg');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
-const winston = require('winston');
-const DailyRotateFile = require('winston-daily-rotate-file');
+const { body, validationResult } = require('express-validator');
+const logger = require('./logger');
 const playIntegrityVerifier = require('./play_integrity_verifier'); // Added Play Integrity Verifier
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Configure Winston Logger
-const logger = winston.createLogger({
+// Regex for validations
+const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+const sha256HexRegex = /^[a-f0-9]{64}$/i;
 
-    level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'development' ? 'debug' : 'info'),
+app.use(helmet());
+app.use(express.json());
+app.use(morgan(process.env.NODE_ENV === 'development' ? 'dev' : 'short'));
 
-level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'development' ? 'debug' : 'info'),
 
-    level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'development' ? 'debug' : 'info'), // Allow LOG_LEVEL override
-Biometric-Voting-App
+// Request logging middleware (morgan) - will log to console independently of Winston for now
+// For production, consider using a format that doesn't log PII or using morgan with winston stream.
+app.use(morgan(process.env.NODE_ENV === 'development' ? 'dev' : 'short'));
 
-    format: winston.format.combine(
-        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-        winston.format.errors({ stack: true }),
-        winston.format.splat(),
-        winston.format.json()
-    ),
-    defaultMeta: { service: 'biometric-voting-backend' },
-    transports: [
-        new winston.transports.Console(),
-        new DailyRotateFile({
-            filename: 'logs/error-%DATE%.log',
-            level: 'error',
-            datePattern: 'YYYY-MM-DD',
-            zippedArchive: true,
-            maxSize: '20m',
-            maxFiles: '14d',
-            format: winston.format.combine(
-                winston.format.timestamp(),
-                winston.format.json()
-            )
-        }),
-        new DailyRotateFile({
-            filename: 'logs/combined-%DATE%.log',
 
-            level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'development' ? 'debug' : 'info'),
+// Database Configuration from Environment Variables with Defaults
+const DB_HOST = process.env.DB_HOST || 'localhost';
+const DB_PORT = process.env.DB_PORT || 5432;
+const DB_USER = process.env.DB_USER || 'your_db_user';
+const DB_PASSWORD = process.env.DB_PASSWORD || 'your_db_password';
+const DB_NAME_DEFAULT = 'biometric_voting_app_db';
+const DB_NAME_TEST = process.env.DB_TEST_NAME || 'biometric_voting_app_test_db';
+const DB_NAME = process.env.NODE_ENV === 'test' ? DB_NAME_TEST : (process.env.DB_NAME || DB_NAME_DEFAULT);
 
-level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'development' ? 'debug' : 'info'),
-            level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'development' ? 'debug' : 'info'), // Allow LOG_LEVEL override
-Biometric-Voting-App
-
-            datePattern: 'YYYY-MM-DD',
-            zippedArchive: true,
-            maxSize: '20m',
-            maxFiles: '14d',
-            format: winston.format.combine(
-                winston.format.timestamp(),
-                winston.format.json()
-            )
-        })
-    ]
+const pool = new Pool({
+    user: DB_USER,
+    host: DB_HOST,
+    database: DB_NAME,
+    password: DB_PASSWORD,
+    port: parseInt(DB_PORT),
 });
 
-if (process.env.NODE_ENV === 'development') {
-    logger.transports[0].format = winston.format.combine(
-        winston.format.colorize(),
-        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-        winston.format.printf(info => `${info.timestamp} ${info.level}: ${info.message}` + (info.stack ? `\n${info.stack}` : ''))
-    );
-} else {
-Biometric-Voting-App
-    logger.transports[0].format = winston.format.combine(
-        winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-        winston.format.json()
-   );
-   logger.transports[0].level = process.env.LOG_LEVEL || 'info';
-}
-
-function getLoggableId(id) {
-  const isProduction = process.env.NODE_ENV === 'production';
-  const productionLogLevelIsVerbose = () => {
-    const currentProdLogLevel = logger.level;
-    const verboseLevels = ['http', 'verbose', 'debug', 'silly'];
-    return verboseLevels.includes(currentProdLogLevel);
-  };
-  if (!isProduction || (isProduction && productionLogLevelIsVerbose())) {
-    return id;
-  }
-  if (id === undefined || id === null) {
-    return '[ID_NOT_PROVIDED]';
-  }
-  const idStr = String(id);
-  return `${idStr.substring(0, 8)}...[REDACTED_FOR_PROD_INFO_LOG]`;
-
-}// Helper function to get a loggable version of an ID
+// Helper function to get a loggable version of an ID
 function getLoggableId(id) {
   const isProduction = process.env.NODE_ENV === 'production';
   // Check if current effective log level is verbose enough to show full ID in prod
@@ -116,43 +65,6 @@ function getLoggableId(id) {
   const idStr = String(id);
   return `${idStr.substring(0, 8)}...[REDACTED_FOR_PROD_INFO_LOG]`;
 }
-
-
-// Regex for validations
-Biometric-Voting-App
-
-const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
-const base64Regex = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
-const sha256HexRegex = /^[a-f0-9]{64}$/i;
-
-app.use(helmet());
-app.use(express.json());
-app.use(morgan(process.env.NODE_ENV === 'development' ? 'dev' : 'short'));
-
-
-// Request logging middleware (morgan) - will log to console independently of Winston for now
-// For production, consider using a format that doesn't log PII or using morgan with winston stream.
-app.use(morgan(process.env.NODE_ENV === 'development' ? 'dev' : 'short'));
-
-
-// Database Configuration from Environment Variables with Defaults
-Biometric-Voting-App
-
-const DB_HOST = process.env.DB_HOST || 'localhost';
-const DB_PORT = process.env.DB_PORT || 5432;
-const DB_USER = process.env.DB_USER || 'your_db_user';
-const DB_PASSWORD = process.env.DB_PASSWORD || 'your_db_password';
-const DB_NAME_DEFAULT = 'biometric_voting_app_db';
-const DB_NAME_TEST = process.env.DB_TEST_NAME || 'biometric_voting_app_test_db';
-const DB_NAME = process.env.NODE_ENV === 'test' ? DB_NAME_TEST : (process.env.DB_NAME || DB_NAME_DEFAULT);
-
-const pool = new Pool({
-    user: DB_USER,
-    host: DB_HOST,
-    database: DB_NAME,
-    password: DB_PASSWORD,
-    port: parseInt(DB_PORT),
-});
 
 async function initializeDatabase() {
     logger.info(`Attempting to connect to database: ${DB_NAME} on ${DB_HOST}:${DB_PORT} as user ${DB_USER}`);
@@ -240,34 +152,53 @@ async function initializeDatabase() {
 }
 
 const apiRouter = express.Router();
-const generalApiLimiter = rateLimit({ /* ... */ }); // Assuming original rate limit configs are here
-const registrationLimiter = rateLimit({ /* ... */ });
-const voteSubmissionLimiter = rateLimit({ /* ... */ });
+
+const generalApiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
+const registrationLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 5,
+    message: "Too many accounts created from this IP, please try again after an hour"
+});
+
+const voteSubmissionLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 5,
+    message: "Too many votes submitted from this IP, please try again after an hour"
+});
+
+// Middleware to handle validation errors
+const handleValidationErrors = (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        const errorMessages = errors.array().map(err => err.msg).join(' ');
+        logger.warn('Validation error:', { errors: errors.array(), body: req.body });
+        return res.status(400).json({ error: errorMessages });
+    }
+    next();
+};
 
 apiRouter.use(generalApiLimiter);
 
-apiRouter.post('/register', registrationLimiter, async (req, res) => {
+// Validation rules for /register
+const registerValidation = [
+    body('anonymizedVoterId')
+        .notEmpty().withMessage('anonymizedVoterId is required and must be a non-empty string.')
+        .isString().withMessage('anonymizedVoterId must be a string.')
+        .trim()
+        .isLength({ max: 255 }).withMessage('anonymizedVoterId must not exceed 255 characters.')
+        .matches(sha256HexRegex).withMessage('anonymizedVoterId must be a valid 64-character hex string.'),
+];
+
+apiRouter.post('/register', registrationLimiter, registerValidation, handleValidationErrors, async (req, res) => {
     const { anonymizedVoterId } = req.body;
-    if (!anonymizedVoterId || typeof anonymizedVoterId !== 'string' || anonymizedVoterId.trim() === '') {
+    const finalNormalizedVoterId = anonymizedVoterId.trim().toLowerCase();
 
-        logger.warn('Invalid registration attempt: Missing or empty anonymizedVoterId.', { body: req.body });
-
-logger.warn('Invalid registration attempt: Missing or empty anonymizedVoterId.', { body: req.body });
-logger.warn('Invalid registration attempt: Missing or empty anonymizedVoterId.', { body: req.body }); // ID not available or useful here
-Biometric-Voting-App
-
-        return res.status(400).json({ error: "Invalid or missing anonymizedVoterId." });
-    }
-    const trimmedAnonymizedVoterId = anonymizedVoterId.trim();
-    if (trimmedAnonymizedVoterId.length > 255) {
-        logger.warn(`Invalid registration attempt: anonymizedVoterId too long. Length: ${trimmedAnonymizedVoterId.length}, ID: ${getLoggableId(trimmedAnonymizedVoterId)}`);
-        return res.status(400).json({ error: "anonymizedVoterId must not exceed 255 characters." });
-    }
-    if (!sha256HexRegex.test(trimmedAnonymizedVoterId)) {
-        logger.warn(`Invalid registration attempt: anonymizedVoterId invalid format. ID: ${getLoggableId(trimmedAnonymizedVoterId)}`);
-        return res.status(400).json({ error: "anonymizedVoterId must be a valid 64-character hex string." });
-    }
-    const finalNormalizedVoterId = trimmedAnonymizedVoterId.toLowerCase();
     try {
         let result = await pool.query('SELECT * FROM Voters WHERE anonymized_voter_id = $1', [finalNormalizedVoterId]);
         if (result.rows.length > 0) {
@@ -279,7 +210,6 @@ Biometric-Voting-App
             [finalNormalizedVoterId]
         );
         const newVoter = result.rows[0];
-Biometric-Voting-App
         logger.info(`New voter registered: ${getLoggableId(newVoter.anonymized_voter_id)} (DB ID: ${newVoter.id})`);
         res.status(201).json({
             message: "Voter registered successfully.",
@@ -302,12 +232,6 @@ apiRouter.get('/elections', async (req, res) => {
     const votedElectionIds = new Set();
 
     if (queryAnonymizedVoterId) {
-
-    const { anonymizedVoterId: queryAnonymizedVoterId } = req.query; // Renamed for clarity
-    let internalVoterId = null;
-    const votedElectionIds = new Set();
-     if (queryAnonymizedVoterId) {
-Biometric-Voting-App
         if (typeof queryAnonymizedVoterId !== 'string' || queryAnonymizedVoterId.trim() === '') {
             logger.warn('Invalid /elections request: anonymizedVoterId provided but empty or not a string.', { query: req.query });
             return res.status(400).json({ error: "anonymizedVoterId must be a non-empty string if provided." });
@@ -322,7 +246,6 @@ Biometric-Voting-App
             return res.status(400).json({ error: "anonymizedVoterId must be a valid 64-character hex string if provided." });
         }
         const normalizedQueryVoterId = trimmedQueryAnonymizedVoterId.toLowerCase();
-Biometric-Voting-App
         try {
             const voterResult = await pool.query('SELECT id FROM Voters WHERE anonymized_voter_id = $1', [normalizedQueryVoterId]);
             if (voterResult.rows.length > 0) {
@@ -338,9 +261,6 @@ Biometric-Voting-App
             logger.error('Error fetching voter or votes status for /elections (non-critical for election listing)', { anonymizedVoterId: getLoggableId(normalizedQueryVoterId), error: err.message, stack: err.stack });
             internalVoterId = null;
             votedElectionIds.clear();
-            internalVoterId = null; // Reset on error
-            votedElectionIds.clear(); // Reset on error
-Biometric-Voting-App
         }
     }
     try {
@@ -373,106 +293,84 @@ Biometric-Voting-App
     }
 });
 
-apiRouter.post('/submitVote', voteSubmissionLimiter, async (req, res) => {
+// Validation rules for /submitVote
+const submitVoteValidation = [
+    body('anonymizedVoterId')
+        .notEmpty().withMessage('anonymizedVoterId is required and must be a non-empty string.')
+        .isString().withMessage('anonymizedVoterId must be a string.')
+        .trim()
+        .isLength({ max: 255 }).withMessage('anonymizedVoterId must not exceed 255 characters.')
+        .matches(sha256HexRegex).withMessage('anonymizedVoterId must be a valid 64-character hex string.'),
 
+    body('electionId')
+        .notEmpty().withMessage('electionId is required and must be a non-empty string.')
+        .isString().withMessage('electionId must be a string.')
+        .trim()
+        .matches(uuidRegex).withMessage('electionId must be a valid UUID.'),
+
+    body('selectedOption')
+        .notEmpty().withMessage('selectedOption is required and must be a non-empty string.')
+        .isString().withMessage('selectedOption must be a string.')
+        .trim()
+        .isLength({ max: 255 }).withMessage('selectedOption must not exceed 255 characters.'),
+
+    body('playIntegrityToken')
+        .notEmpty().withMessage('playIntegrityToken is required and must be a non-empty string.')
+        .isString().withMessage('playIntegrityToken must be a string.')
+        .trim(),
+
+    body('playIntegrityNonce')
+        .notEmpty().withMessage('playIntegrityNonce is required and must be a non-empty string.')
+        .isString().withMessage('playIntegrityNonce must be a string.')
+        .trim(),
+
+    body('encryptedProof')
+        .optional()
+        .isString().withMessage('If provided, encryptedProof must be a string.')
+        .trim()
+        .notEmpty().withMessage('If provided as a string, encryptedProof must not be empty.')
+        .matches(base64Regex).withMessage('If provided, encryptedProof must be a valid Base64 encoded string.'),
+
+    body('iv')
+        .optional()
+        .isString().withMessage('If provided, iv must be a string.')
+        .trim()
+        .notEmpty().withMessage('If provided as a string, iv must not be empty.')
+        .matches(base64Regex).withMessage('If provided, iv must be a valid Base64 encoded string.'),
+
+    // Custom validator to ensure encryptedProof and iv are present together or not at all
+    body().custom((value) => {
+        const hasEncryptedProof = !!value.encryptedProof;
+        const hasIv = !!value.iv;
+        if (hasEncryptedProof !== hasIv) {
+            throw new Error('encryptedProof and iv must be provided together as non-empty strings, or not at all.');
+        }
+        return true;
+    }),
+];
+
+apiRouter.post('/submitVote', voteSubmissionLimiter, submitVoteValidation, handleValidationErrors, async (req, res) => {
     const {
-
-const {
-Biometric-Voting-App
         anonymizedVoterId,
         electionId,
         selectedOption,
         encryptedProof,
         iv,
-        playIntegrityToken, // New field
-        playIntegrityNonce  // New field
+        playIntegrityToken,
+        playIntegrityNonce
     } = req.body;
-    let loggableVoterId = '[ID_NOT_VALID_YET]';
 
-    const { anonymizedVoterId, electionId, selectedOption, encryptedProof, iv } = req.body;
-    let loggableVoterId = '[ID_NOT_VALID_YET]'; // Placeholder for logging before full validation
-Biometric-Voting-App
-const errors = [];
-    let finalAnonymizedVoterId = '';
-    if (!anonymizedVoterId || typeof anonymizedVoterId !== 'string' || anonymizedVoterId.trim() === '') {
-        errors.push("anonymizedVoterId is required and must be a non-empty string.");
-    } else {
-        const trimmedVoterId = anonymizedVoterId.trim();
-        if (trimmedVoterId.length > 255) { errors.push("anonymizedVoterId must not exceed 255 characters."); }
-        if (!sha256HexRegex.test(trimmedVoterId)) { errors.push("anonymizedVoterId must be a valid 64-character hex string."); }
-        else (
-            finalAnonymizedVoterId = trimmedVoterId.toLowerCase();
-            loggableVoterId = getLoggableId(finalAnonymizedVoterId);
+    const finalAnonymizedVoterId = anonymizedVoterId.trim().toLowerCase();
+    const loggableVoterId = getLoggableId(finalAnonymizedVoterId);
 
-finalAnonymizedVoterId = trimmedVoterId.toLowerCase();
-            loggableVoterId = getLoggableId(finalAnonymizedVoterId);
-            finalAnonymizedVoterId = trimmedVoterId.toLowerCase(); // Normalize here after format validation
-            loggableVoterId = getLoggableId(finalAnonymizedVoterId); // Update for logging
- Biometric-Voting-App
-
-        }
-    }
-
-    let finalElectionId = '';
-
-    if (!electionId || typeof electionId !== 'string' || electionId.trim() === '') {
-
-    if (!electionId || typeof electionId !== 'string' || electionId.trim() === '') {
-    if (!electionId || typeof electionId !== 'string' || electionId.trim() === '') { // Added check for empty string
-Biometric-Voting-App
-
-        errors.push("electionId is required and must be a non-empty string.");
-    } else {
-        finalElectionId = electionId.trim();
-        if (!uuidRegex.test(finalElectionId)) { errors.push("electionId must be a valid UUID."); }
-    }
-
-    let finalSelectedOption = '';
-    if (!selectedOption || typeof selectedOption !== 'string' || selectedOption.trim() === '') {
-        errors.push("selectedOption is required and must be a non-empty string.");
-    } else {
-        finalSelectedOption = selectedOption.trim();
-        if (finalSelectedOption.length > 255) { errors.push("selectedOption must not exceed 255 characters."); }
-    }
-
-    // Validation for Play Integrity fields
-    if (!playIntegrityToken || typeof playIntegrityToken !== 'string' || playIntegrityToken.trim() === '') {
-        errors.push('playIntegrityToken is required and must be a non-empty string.');
-    }
-    if (!playIntegrityNonce || typeof playIntegrityNonce !== 'string' || playIntegrityNonce.trim() === '') {
-        errors.push('playIntegrityNonce is required and must be a non-empty string.');
-    }
-
-    const hasEncryptedProof = encryptedProof !== undefined && encryptedProof !== null;
-    let proofIsNonEmptyString = false;
-    if (hasEncryptedProof) {
-        if (typeof encryptedProof !== 'string') { errors.push("If provided, encryptedProof must be a string."); }
-        else if (encryptedProof.trim() === '') { errors.push("If provided as a string, encryptedProof must not be empty."); }
-        else { proofIsNonEmptyString = true; if (!base64Regex.test(encryptedProof.trim())) { errors.push("If provided, encryptedProof must be a valid Base64 encoded string."); } }
-    }
-    const hasIv = iv !== undefined && iv !== null;
-    let ivIsNonEmptyString = false;
-    if (hasIv) {
-        if (typeof iv !== 'string') { errors.push("If provided, iv must be a string."); }
-        else if (iv.trim() === '') { errors.push("If provided as a string, iv must not be empty."); }
-        else { ivIsNonEmptyString = true; if (!base64Regex.test(iv.trim())) { errors.push("If provided, iv must be a valid Base64 encoded string."); } }
-    }
-    if (proofIsNonEmptyString !== ivIsNonEmptyString) { errors.push("encryptedProof and iv must be provided together as non-empty strings, or not at all."); }
-
-    if (errors.length > 0) {
-        logger.warn(`Invalid vote submission request for voter: ${loggableVoterId}, election: ${finalElectionId || '[ELECTION_ID_INVALID]'}`, { errors: errors, body: req.body });
-        return res.status(400).json({ error: errors.join(" ") });
-    }
-
-    const finalEncryptedProof = proofIsNonEmptyString ? encryptedProof.trim() : null;
-    const finalIv = ivIsNonEmptyString ? iv.trim() : null;
+    const finalElectionId = electionId.trim();
+    const finalSelectedOption = selectedOption.trim();
+    const finalEncryptedProof = encryptedProof ? encryptedProof.trim() : null;
+    const finalIv = iv ? iv.trim() : null;
 
     try {
-Biometric-Voting-App
         logger.info(`Initiating Play Integrity check for submitVote from voter: ${loggableVoterId}`);
-        // const integrityResult = await playIntegrityVerifier.verifyToken(playIntegrityToken.trim(), playIntegrityNonce.trim());
-        // For now, this is a placeholder. In a real scenario, the verifyToken function would be called here.
-        // To make the code runnable without full implementation of verifyToken's dependencies (like Google API client setup for backend):
+
         let integrityResult = { isValid: process.env.NODE_ENV !== 'production' }; // Bypass in non-prod for now
         if (process.env.PERFORM_PLAY_INTEGRITY_CHECK === 'true') { // Allow forcing check via env var
              integrityResult = await playIntegrityVerifier.verifyToken(playIntegrityToken.trim(), playIntegrityNonce.trim());
@@ -480,7 +378,6 @@ Biometric-Voting-App
             // In production, if not explicitly told to skip, perform the check.
              integrityResult = await playIntegrityVerifier.verifyToken(playIntegrityToken.trim(), playIntegrityNonce.trim());
         }
-
 
         if (!integrityResult.isValid) {
             logger.warn(`Play Integrity check failed for voter ${loggableVoterId}: ${integrityResult.error || 'Unknown integrity failure'}`);
@@ -492,7 +389,6 @@ Biometric-Voting-App
         logger.info(`Play Integrity check passed for voter: ${loggableVoterId}`);
 
         // Proceed with existing logic if integrity check passes
-Biometric-Voting-App
         const voterResult = await pool.query('SELECT id, is_eligible FROM Voters WHERE anonymized_voter_id = $1', [finalAnonymizedVoterId]);
         if (voterResult.rows.length === 0) {
             logger.warn(`Vote attempt by unregistered voter: ${loggableVoterId}`);
@@ -531,20 +427,16 @@ Biometric-Voting-App
             const logDataForBlockchain = {
                 voteId: newVote.id,
                 anonymizedVoterId: loggableVoterId,
- Biometric-Voting-App
                 electionId: newVote.election_id,
                 selectedOption: newVote.selected_option_value, // Option itself is not PII
                 castAtTimestamp: newVote.cast_at_timestamp,
             };
-            logger.debug(`Full data for blockchain simulation: ${JSON.stringify({ ...logDataForBlockchain, anonymizedVoterId: finalAnonymizedVoterId })}`);
-            logger.info(`SIMULATING BLOCKCHAIN RECORD (Append-Only Log Entry): ${JSON.stringify(logDataForBlockchain)}`);
 
             // Log full ID for blockchain simulation at debug, otherwise loggable version for info
             logger.debug(`Full data for blockchain simulation: ${JSON.stringify({ ...logDataForBlockchain, anonymizedVoterId: finalAnonymizedVoterId })}`);
             logger.info(`SIMULATING BLOCKCHAIN RECORD (Append-Only Log Entry): ${JSON.stringify(logDataForBlockchain)}`);
 
 
-Biometric-Voting-App
             res.status(201).json({
                 message: "Vote submitted successfully and recorded anonymously!",
                 vote: {
@@ -555,20 +447,11 @@ Biometric-Voting-App
                 }
             });
         } catch (dbErr) {
-            if (dbErr.code === '23505') {
-if (dbErr.code === '23505') { // Unique violation (double voting)
-Biometric-Voting-App
-
+            if (dbErr.code === '23505') { // Unique violation (double voting)
                 logger.warn(`Double voting attempt by voter ${loggableVoterId} (DB ID: ${internalVoterId}) for election ${finalElectionId}`);
                 return res.status(409).json({ error: "Already voted in this election." });
             }
             throw dbErr; // Re-throw other DB errors
-        }
-} catch (err) { // This outer catch now primarily catches errors from Play Integrity or if it re-throws.
-        logger.error('Error during /submitVote (potentially Play Integrity or subsequent logic)', { anonymizedVoterId: loggableVoterId, electionId: finalElectionId, error: err.message, stack: err.stack, detail: err.detail, code: err.code });
-        // If it's an error from playIntegrityVerifier.verifyToken that wasn't caught as a structured {isValid:false}
-        if (err.message && err.message.startsWith('PlayIntegrityClientInitError')) {
-             return res.status(503).json({ message: "Service temporarily unavailable due to integrity client error." });
         }
 
     } catch (err) { // This outer catch now primarily catches errors from Play Integrity or if it re-throws.
@@ -578,12 +461,6 @@ Biometric-Voting-App
              return res.status(503).json({ message: "Service temporarily unavailable due to integrity client error." });
         }
         return res.status(500).json({ error: "An unexpected error occurred on the server." });
-
-        return res.status(500).json({ error: "An unexpected error occurred on the server." });
-    } catch (err) {
-        logger.error('Error during /submitVote', { anonymizedVoterId: loggableVoterId, electionId: finalElectionId, error: err.message, stack: err.stack, detail: err.detail, code: err.code });
- Biometric-Voting-App
-
     }
 });
 

@@ -11,10 +11,9 @@ This project aims to develop a comprehensive solution for biometric voting. Key 
 - [Development Roadmap](./docs/development_roadmap.md)
 
 ## 3. Project Structure
-- **/src**: Contains the source code for the application.
-  - **/src/frontend**: Frontend application code (e.g., mobile app, web admin panel).
-  - **/src/backend**: Backend API services.
-  - **/src/blockchain**: Smart contracts and blockchain-related scripts.
+- **/app**: Android mobile application source code.
+- **/backend**: Node.js Backend API services.
+- **/legacy**: Legacy or prototype code (e.g., previous Python backend, React frontend).
 - **/docs**: Project documentation, including requirements, architecture, and roadmap.
 - **/tests**: Unit, integration, and end-to-end tests.
 
