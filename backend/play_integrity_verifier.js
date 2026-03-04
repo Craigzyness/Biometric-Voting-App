@@ -168,4 +168,3 @@ module.exports = {
 
 // No need to call initializeClient() on module load if it's called within verifyToken.
 // This ensures it's only initialized if/when needed and handles potential errors at call time.
-```
