@@ -95,10 +95,7 @@ Biometric-Voting-App
 
     @Provides
     @Singleton
-
     fun provideStableIdentifierProvider(@ApplicationContext context: Context): StableIdentifierProvider {
-        // This assumes StableIdentifierProvider is refactored to a class in core.common taking Context.
-        // TODO: Refactor StableIdentifierProvider from 'object' to 'class' that takes Context for Hilt DI.
         return com.example.biometricvotingapp.core.common.StableIdentifierProvider(context)
     }
 
