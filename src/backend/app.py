@@ -122,12 +122,33 @@ from .auth import register_user as auth_register_user
 from .auth import get_user_by_username as auth_get_user_by_username
 
 class UserAdminView(SecureModelView): # ... (condensed)
-    column_list = ('id', 'username', 'email', 'biometrics_enabled'); column_searchable_list = ('username', 'email'); column_filters = ('biometrics_enabled',); form_excluded_columns = ('password_hash', 'biometric_public_key', 'votes'); can_create = False; can_delete = False; can_edit = True
+    column_list = ('id', 'username', 'email', 'biometrics_enabled')
+    column_searchable_list = ('username', 'email')
+    column_filters = ('biometrics_enabled',)
+    form_excluded_columns = ('password_hash', 'biometric_public_key', 'votes')
+    can_create = False
+    can_delete = False
+    can_edit = True
+
 class SQLPollAdminView(SecureModelView): # ... (condensed)
-    column_list = ('id', 'title', 'start_date', 'end_date', 'created_at'); column_searchable_list = ('title',); column_filters = ('start_date', 'end_date'); form_columns = ('title', 'description', 'options', 'start_date', 'end_date'); can_create = True; can_edit = True; can_delete = True
-    def __init__(self, session, **kwargs): super(SQLPollAdminView, self).__init__(Poll, session, name="SQL Polls", **kwargs)
+    column_list = ('id', 'title', 'start_date', 'end_date', 'created_at')
+    column_searchable_list = ('title',)
+    column_filters = ('start_date', 'end_date')
+    form_columns = ('title', 'description', 'options', 'start_date', 'end_date')
+    can_create = True
+    can_edit = True
+    can_delete = True
+
+    def __init__(self, session, **kwargs):
+        super(SQLPollAdminView, self).__init__(Poll, session, name="SQL Polls", **kwargs)
+
 class VoteAdminView(SecureModelView): # ... (condensed)
-    column_list = ('id', 'voter.username', 'poll.title', 'selected_option_id', 'timestamp'); column_searchable_list = ('voter.username', 'poll.title'); column_filters = ('timestamp', 'poll_id'); can_create = False; can_edit = False; can_delete = False # Corrected poll.title filter to poll_id
+    column_list = ('id', 'voter.username', 'poll.title', 'selected_option_id', 'timestamp')
+    column_searchable_list = ('voter.username', 'poll.title')
+    column_filters = ('timestamp', 'poll_id')
+    can_create = False
+    can_edit = False
+    can_delete = False # Corrected poll.title filter to poll_id
 
 admin.add_view(UserAdminView(User, db.session))
 admin.add_view(SQLPollAdminView(db.session))
