@@ -6,9 +6,12 @@ import android.security.keystore.KeyProperties
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
 import java.security.GeneralSecurityException
 import java.util.UUID
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * StableIdentifierProvider.kt
@@ -21,7 +24,10 @@ import java.util.UUID
  * - Uses Android's EncryptedSharedPreferences for storing the stable ID.
  * - EncryptedSharedPreferences is configured to use a MasterKey from the Android Keystore.
  */
-object StableIdentifierProvider {
+@Singleton
+class StableIdentifierProvider @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
 
     private const val TAG = "StableIdentifierProv"
 
@@ -32,13 +38,13 @@ object StableIdentifierProvider {
     private var cachedStableId: String? = null
 
     @Synchronized
-    fun getStableIdentifier(context: Context): String? {
+    fun getStableIdentifier(): String? {
         if (cachedStableId != null) {
             return cachedStableId
         }
 
         try {
-            val masterKey = getOrCreateMasterKey(context)
+            val masterKey = getOrCreateMasterKey()
             val sharedPreferences = EncryptedSharedPreferences.create(
                 context,
                 ENCRYPTED_PREFS_FILE_NAME,
@@ -70,7 +76,7 @@ object StableIdentifierProvider {
     }
 
     @Throws(GeneralSecurityException::class, IOException::class)
-    private fun getOrCreateMasterKey(context: Context): MasterKey {
+    private fun getOrCreateMasterKey(): MasterKey {
         val spec = KeyGenParameterSpec.Builder(
             KEY_ALIAS_STABLE_ID_PREFS,
             KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
@@ -90,10 +96,10 @@ object StableIdentifierProvider {
      * Use with extreme caution.
      */
     @Synchronized
-    fun clearStableIdForTesting(context: Context) {
+    fun clearStableIdForTesting() {
         try {
             Log.w(TAG, "Attempting to clear stored stable ID for testing purposes.")
-            val masterKey = getOrCreateMasterKey(context)
+            val masterKey = getOrCreateMasterKey()
             val sharedPreferences = EncryptedSharedPreferences.create(
                 context,
                 ENCRYPTED_PREFS_FILE_NAME,
