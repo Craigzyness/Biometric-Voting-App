@@ -21,24 +21,33 @@ import java.util.UUID
  * - Uses Android's EncryptedSharedPreferences for storing the stable ID.
  * - EncryptedSharedPreferences is configured to use a MasterKey from the Android Keystore.
  */
-object StableIdentifierProvider {
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import javax.inject.Singleton
 
-    private const val TAG = "StableIdentifierProv"
+@Singleton
+class StableIdentifierProvider @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
 
-    private const val ENCRYPTED_PREFS_FILE_NAME = "biometric_app_stable_id_prefs"
-    private const val KEY_ALIAS_STABLE_ID_PREFS = "biometric_app_stable_id_master_key_alias"
-    private const val PREF_KEY_STABLE_INSTALL_ID = "stable_install_id_uuid"
+    companion object {
+        private const val TAG = "StableIdentifierProv"
+
+        const val ENCRYPTED_PREFS_FILE_NAME = "biometric_app_stable_id_prefs"
+        const val KEY_ALIAS_STABLE_ID_PREFS = "biometric_app_stable_id_master_key_alias"
+        const val PREF_KEY_STABLE_INSTALL_ID = "stable_install_id_uuid"
+    }
 
     private var cachedStableId: String? = null
 
     @Synchronized
-    fun getStableIdentifier(context: Context): String? {
+    fun getStableIdentifier(): String? {
         if (cachedStableId != null) {
             return cachedStableId
         }
 
         try {
-            val masterKey = getOrCreateMasterKey(context)
+            val masterKey = getOrCreateMasterKey()
             val sharedPreferences = EncryptedSharedPreferences.create(
                 context,
                 ENCRYPTED_PREFS_FILE_NAME,
@@ -70,7 +79,7 @@ object StableIdentifierProvider {
     }
 
     @Throws(GeneralSecurityException::class, IOException::class)
-    private fun getOrCreateMasterKey(context: Context): MasterKey {
+    private fun getOrCreateMasterKey(): MasterKey {
         val spec = KeyGenParameterSpec.Builder(
             KEY_ALIAS_STABLE_ID_PREFS,
             KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
@@ -90,10 +99,10 @@ object StableIdentifierProvider {
      * Use with extreme caution.
      */
     @Synchronized
-    fun clearStableIdForTesting(context: Context) {
+    fun clearStableIdForTesting() {
         try {
             Log.w(TAG, "Attempting to clear stored stable ID for testing purposes.")
-            val masterKey = getOrCreateMasterKey(context)
+            val masterKey = getOrCreateMasterKey()
             val sharedPreferences = EncryptedSharedPreferences.create(
                 context,
                 ENCRYPTED_PREFS_FILE_NAME,
