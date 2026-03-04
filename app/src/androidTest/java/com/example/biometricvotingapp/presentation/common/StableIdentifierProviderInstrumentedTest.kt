@@ -19,14 +19,14 @@ class StableIdentifierProviderInstrumentedTest {
     private lateinit var context: Context
     // The actual StableIdentifierProvider instance from the main source set will be tested.
     // Ensure the import path is correct.
-    private lateinit var stableIdentifierProvider: com.example.biometricvotingapp.domain.security.StableIdentifierProvider
+    private lateinit var stableIdentifierProvider: com.example.biometricvotingapp.core.common.StableIdentifierProvider
 
     // Define constants from StableIdentifierProvider for test verification
     private companion object {
         // These constants must match those in the actual StableIdentifierProvider implementation
-        private const val PREFS_FILENAME = "biometric_app_stable_id_prefs"
-        private const val ID_KEY = "stable_app_installation_id" // Corrected key from StableIdentifierProvider
-        private const val MASTER_KEY_ALIAS = "biometric_app_stable_id_master_key_alias" // Actual alias from StableIdentifierProvider
+        private const val PREFS_FILENAME = com.example.biometricvotingapp.core.common.StableIdentifierProvider.ENCRYPTED_PREFS_FILE_NAME
+        private const val ID_KEY = com.example.biometricvotingapp.core.common.StableIdentifierProvider.PREF_KEY_STABLE_INSTALL_ID
+        private const val MASTER_KEY_ALIAS = com.example.biometricvotingapp.core.common.StableIdentifierProvider.KEY_ALIAS_STABLE_ID_PREFS
     }
 
     @Before
@@ -34,14 +34,14 @@ class StableIdentifierProviderInstrumentedTest {
         context = ApplicationProvider.getApplicationContext()
         clearSharedPreferences()
         // Initialize the actual provider from the main source set
-        stableIdentifierProvider = com.example.biometricvotingapp.domain.security.StableIdentifierProvider
+        stableIdentifierProvider = com.example.biometricvotingapp.core.common.StableIdentifierProvider(context)
     }
 
     @After
     fun tearDown() {
         clearSharedPreferences()
         // Reset the cached ID in the object to ensure test isolation
-        com.example.biometricvotingapp.domain.security.StableIdentifierProvider.clearStableIdForTesting(context)
+        stableIdentifierProvider.clearStableIdForTesting()
     }
 
     private fun clearSharedPreferences() {
@@ -71,7 +71,7 @@ class StableIdentifierProviderInstrumentedTest {
     @Test
     fun getStableId_shouldGenerateAndStoreUUID_whenCalledFirstTime() {
         // Act
-        val id1 = stableIdentifierProvider.getStableIdentifier(context)
+        val id1 = stableIdentifierProvider.getStableIdentifier()
 
         // Assert
         assertThat(id1).isNotNull()
@@ -97,9 +97,9 @@ class StableIdentifierProviderInstrumentedTest {
     @Test
     fun getStableId_shouldReturnExistingUUID_whenCalledMultipleTimes() {
         // Act
-        val id1 = stableIdentifierProvider.getStableIdentifier(context)
+        val id1 = stableIdentifierProvider.getStableIdentifier()
         // Call again; StableIdentifierProvider uses a cached ID internally after first retrieval/generation
-        val id2 = stableIdentifierProvider.getStableIdentifier(context)
+        val id2 = stableIdentifierProvider.getStableIdentifier()
 
         // Assert
         assertThat(id1).isNotNull()
@@ -112,15 +112,15 @@ class StableIdentifierProviderInstrumentedTest {
     @Test
     fun getStableId_returnsNewUUID_ifSharedPreferencesAreClearedAndCacheIsBypassed() {
         // First provider and ID
-        val id1 = stableIdentifierProvider.getStableIdentifier(context)
+        val id1 = stableIdentifierProvider.getStableIdentifier()
         assertThat(id1).isNotNull()
         assertThat(isValidUUID(id1)).isTrue()
 
         // Clear preferences and reset the provider's cache to simulate a fresh state
         clearSharedPreferences()
-        com.example.biometricvotingapp.domain.security.StableIdentifierProvider.clearStableIdForTesting(context) // Resets cachedStableId
+        stableIdentifierProvider.clearStableIdForTesting() // Resets cachedStableId
 
-        val id2 = stableIdentifierProvider.getStableIdentifier(context) // Should generate a new one
+        val id2 = stableIdentifierProvider.getStableIdentifier() // Should generate a new one
 
         assertThat(id2).isNotNull()
         assertThat(isValidUUID(id2)).isTrue()
@@ -131,16 +131,16 @@ class StableIdentifierProviderInstrumentedTest {
     fun idIsRandomlyGeneratedUUID_acrossDifferentInstancesWithClearedStorage() {
         // Test that subsequent generations produce different UUIDs if storage is cleared
         clearSharedPreferences()
-        com.example.biometricvotingapp.domain.security.StableIdentifierProvider.clearStableIdForTesting(context)
-        val idA = stableIdentifierProvider.getStableIdentifier(context)
+        stableIdentifierProvider.clearStableIdForTesting()
+        val idA = stableIdentifierProvider.getStableIdentifier()
 
         clearSharedPreferences()
-        com.example.biometricvotingapp.domain.security.StableIdentifierProvider.clearStableIdForTesting(context)
-        val idB = stableIdentifierProvider.getStableIdentifier(context)
+        stableIdentifierProvider.clearStableIdForTesting()
+        val idB = stableIdentifierProvider.getStableIdentifier()
 
         clearSharedPreferences()
-        com.example.biometricvotingapp.domain.security.StableIdentifierProvider.clearStableIdForTesting(context)
-        val idC = stableIdentifierProvider.getStableIdentifier(context)
+        stableIdentifierProvider.clearStableIdForTesting()
+        val idC = stableIdentifierProvider.getStableIdentifier()
 
         assertThat(idA).isNotNull()
         assertThat(isValidUUID(idA)).isTrue()

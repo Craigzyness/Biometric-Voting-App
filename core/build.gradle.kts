@@ -1,6 +1,6 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
+    id("com.android.library") version libs.versions.androidGradlePlugin.get()
+    id("org.jetbrains.kotlin.android") version libs.versions.kotlin.get()
     // No "kotlin-kapt" or Hilt plugin here for now, as :core will contain plain Kotlin/Java
     // and Android util classes that don't require Hilt for themselves.
     // If Hilt-managed classes are moved here, these plugins would be needed.
@@ -39,7 +39,7 @@ android {
 dependencies {
     // Assuming libs.kotlin.stdlib is defined in libs.versions.toml
     // If not, it would be: implementation(kotlin("stdlib-jdk8"))
-    implementation(libs.kotlin.stdlib)
+    implementation(kotlin("stdlib-jdk8"))
     implementation(libs.androidx.core.ktx)
 
     // Dependencies for specific classes being moved to :core:
