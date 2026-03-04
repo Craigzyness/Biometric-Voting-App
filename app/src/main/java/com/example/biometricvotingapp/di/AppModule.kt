@@ -66,9 +66,8 @@ Biometric-Voting-App
     @Provides
     @Singleton
     fun provideSecureSaltProvider(@ApplicationContext context: Context): SecureSaltProvider {
-        // This assumes SecureSaltProvider is refactored to a class in core.common taking Context.
-        // TODO: Refactor SecureSaltProvider from 'object' to 'class' that takes Context for Hilt DI.
         return com.example.biometricvotingapp.core.common.SecureSaltProvider(context)
+    }
 
     // TODO: Refactor AnonymizedIdGenerator from 'object' to 'class' that takes Context for Hilt DI.
     // The current provider will not work as expected with 'object AnonymizedIdGenerator'.

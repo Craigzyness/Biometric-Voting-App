@@ -14,7 +14,7 @@ import java.security.MessageDigest
 
 // Mockable placeholder for SecureSaltProvider
 object SecureSaltProvider {
-    fun getSalt(context: Context): ByteArray? = byteArrayOf() // Default behavior for mocking
+    fun getSalt(): ByteArray? = byteArrayOf() // Default behavior for mocking
 }
 
 // Mockable placeholder for StableIdentifierProvider
@@ -47,7 +47,7 @@ class AnonymizedIdGeneratorTest {
 
     @Test
     fun `generate returns non-null SHA-256 hex string on success`() {
-        every { SecureSaltProvider.getSalt(mockContext) } returns testSalt
+        every { SecureSaltProvider.getSalt() } returns testSalt
         every { StableIdentifierProvider.getStableIdentifier(mockContext) } returns testStableId
 
         val anonymizedId = AnonymizedIdGenerator.generate(mockContext, mockAuthResult)
@@ -58,7 +58,7 @@ class AnonymizedIdGeneratorTest {
 
     @Test
     fun `generate returns same ID for same salt and stable ID`() {
-        every { SecureSaltProvider.getSalt(mockContext) } returns testSalt
+        every { SecureSaltProvider.getSalt() } returns testSalt
         every { StableIdentifierProvider.getStableIdentifier(mockContext) } returns testStableId
 
         val id1 = AnonymizedIdGenerator.generate(mockContext, mockAuthResult)
@@ -71,10 +71,10 @@ class AnonymizedIdGeneratorTest {
     fun `generate returns different IDs for different salts`() {
         every { StableIdentifierProvider.getStableIdentifier(mockContext) } returns testStableId
 
-        every { SecureSaltProvider.getSalt(mockContext) } returns "Salt1".toByteArray()
+        every { SecureSaltProvider.getSalt() } returns "Salt1".toByteArray()
         val id1 = AnonymizedIdGenerator.generate(mockContext, mockAuthResult)
 
-        every { SecureSaltProvider.getSalt(mockContext) } returns "Salt2".toByteArray()
+        every { SecureSaltProvider.getSalt() } returns "Salt2".toByteArray()
         val id2 = AnonymizedIdGenerator.generate(mockContext, mockAuthResult)
 
         assertNotNull(id1)
@@ -84,7 +84,7 @@ class AnonymizedIdGeneratorTest {
 
     @Test
     fun `generate returns different IDs for different stable IDs`() {
-        every { SecureSaltProvider.getSalt(mockContext) } returns testSalt
+        every { SecureSaltProvider.getSalt() } returns testSalt
 
         every { StableIdentifierProvider.getStableIdentifier(mockContext) } returns "StableID1"
         val id1 = AnonymizedIdGenerator.generate(mockContext, mockAuthResult)
@@ -100,7 +100,7 @@ class AnonymizedIdGeneratorTest {
 
     @Test
     fun `generate returns null if salt provider returns null`() {
-        every { SecureSaltProvider.getSalt(mockContext) } returns null
+        every { SecureSaltProvider.getSalt() } returns null
         every { StableIdentifierProvider.getStableIdentifier(mockContext) } returns testStableId
 
         val anonymizedId = AnonymizedIdGenerator.generate(mockContext, mockAuthResult)
@@ -109,7 +109,7 @@ class AnonymizedIdGeneratorTest {
 
     @Test
     fun `generate returns null if stable ID provider returns null`() {
-        every { SecureSaltProvider.getSalt(mockContext) } returns testSalt
+        every { SecureSaltProvider.getSalt() } returns testSalt
         every { StableIdentifierProvider.getStableIdentifier(mockContext) } returns null
 
         val anonymizedId = AnonymizedIdGenerator.generate(mockContext, mockAuthResult)
@@ -118,7 +118,7 @@ class AnonymizedIdGeneratorTest {
 
     @Test
     fun `getRegisteredAnonymizedId returns non-null re-derived ID if components exist`() {
-        every { SecureSaltProvider.getSalt(mockContext) } returns testSalt
+        every { SecureSaltProvider.getSalt() } returns testSalt
         every { StableIdentifierProvider.getStableIdentifier(mockContext) } returns testStableId
 
         // Expected ID based on the known testSalt and testStableId
@@ -134,7 +134,7 @@ class AnonymizedIdGeneratorTest {
 
     @Test
     fun `getRegisteredAnonymizedId returns null if salt is missing`() {
-        every { SecureSaltProvider.getSalt(mockContext) } returns null
+        every { SecureSaltProvider.getSalt() } returns null
         every { StableIdentifierProvider.getStableIdentifier(mockContext) } returns testStableId
 
         val registeredId = AnonymizedIdGenerator.getRegisteredAnonymizedId(mockContext)
@@ -143,7 +143,7 @@ class AnonymizedIdGeneratorTest {
 
     @Test
     fun `getRegisteredAnonymizedId returns null if stable ID is missing`() {
-        every { SecureSaltProvider.getSalt(mockContext) } returns testSalt
+        every { SecureSaltProvider.getSalt() } returns testSalt
         every { StableIdentifierProvider.getStableIdentifier(mockContext) } returns null
 
         val registeredId = AnonymizedIdGenerator.getRegisteredAnonymizedId(mockContext)

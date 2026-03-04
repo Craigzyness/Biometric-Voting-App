@@ -2,26 +2,19 @@
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.kotlinAndroid)
-    id("kotlin-kapt") // Added kotlin-kapt for Hilt
+    alias(libs.plugins.kotlinKapt)
     alias(libs.plugins.hilt) // Added Hilt plugin
     id("com.google.gms.google-services") version "4.4.1"
     id("com.google.firebase.crashlytics") version "2.9.9"
 }
 
-// Define keystore properties file
-val keystorePropertiesFile = rootProject.file("keystore.properties")
-val keystoreProperties = java.util.Properties()
-if (keystorePropertiesFile.exists() && keystorePropertiesFile.isFile) {
-    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
-}
+import java.util.Properties
 
 // Define keystore properties file
 val keystorePropertiesFile = rootProject.file("keystore.properties")
-val keystoreProperties = java.util.Properties()
+val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists() && keystorePropertiesFile.isFile) {
     keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
-Biometric-Voting-App
-
 }
 
 android {
@@ -51,7 +44,7 @@ android {
 
             // It's good practice to validate if properties were actually loaded if you want to fail early
             // For example, you could add checks here:
-            if (storeFile.name == "placeholder.keystore" && keystorePropertiesFile.exists()) {
+            if (storeFile?.name == "placeholder.keystore" && keystorePropertiesFile.exists()) {
                 println("Warning: 'storeFile' not found in keystore.properties. Using placeholder.")
             }
             // Add similar checks for other properties if desired.
@@ -184,5 +177,5 @@ dependencies {
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.tooling)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
+    // debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

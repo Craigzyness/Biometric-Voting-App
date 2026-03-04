@@ -1,9 +1,8 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
-    // No "kotlin-kapt" or Hilt plugin here for now, as :core will contain plain Kotlin/Java
-    // and Android util classes that don't require Hilt for themselves.
-    // If Hilt-managed classes are moved here, these plugins would be needed.
+    alias(libs.plugins.androidLibrary)
+    alias(libs.plugins.kotlinAndroid)
+    alias(libs.plugins.kotlinKapt)
+    alias(libs.plugins.hilt)
 }
 
 android {
@@ -39,7 +38,7 @@ android {
 dependencies {
     // Assuming libs.kotlin.stdlib is defined in libs.versions.toml
     // If not, it would be: implementation(kotlin("stdlib-jdk8"))
-    implementation(libs.kotlin.stdlib)
+    implementation(kotlin("stdlib"))
     implementation(libs.androidx.core.ktx)
 
     // Dependencies for specific classes being moved to :core:
@@ -53,4 +52,8 @@ dependencies {
     // Test dependencies (for core/src/test/java)
     testImplementation(libs.junit)
     // Add other test dependencies like mockk, truth if tests are moved/created here for :core.
+
+    // Hilt Dependencies
+    implementation(libs.hilt.android)
+    kapt(libs.hilt.compiler)
 }

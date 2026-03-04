@@ -17,14 +17,7 @@ class SecureSaltProviderInstrumentedTest {
 
     private lateinit var context: Context
     // The actual SecureSaltProvider instance from the main source set will be tested.
-    // We need to ensure its path is correct if it's not in presentation/common.
-    // Based on previous steps, it's in domain.security.
-    // This test file should be in the same package structure in androidTest,
-    // or the import for SecureSaltProvider needs to be correct.
-    // Assuming the test file is in com.example.biometricvotingapp.domain.security for this to work directly
-    // or that the import below is adjusted.
-    // For now, let's assume the test is in the right mirror package or the import is correct.
-    private lateinit var secureSaltProvider: com.example.biometricvotingapp.domain.security.SecureSaltProvider
+    private lateinit var secureSaltProvider: com.example.biometricvotingapp.core.common.SecureSaltProvider
 
 
     // Define constants from SecureSaltProvider for test verification
@@ -41,14 +34,14 @@ class SecureSaltProviderInstrumentedTest {
         context = ApplicationProvider.getApplicationContext()
         clearSharedPreferences()
         // Initialize the actual provider from the main source set
-        secureSaltProvider = com.example.biometricvotingapp.domain.security.SecureSaltProvider
+        secureSaltProvider = com.example.biometricvotingapp.core.common.SecureSaltProvider(context)
     }
 
     @After
     fun tearDown() {
         clearSharedPreferences()
         // Reset the cached salt in the object to ensure test isolation if tests run in same process
-        com.example.biometricvotingapp.domain.security.SecureSaltProvider.clearSaltForTesting(context)
+        secureSaltProvider.clearSaltForTesting()
     }
 
     private fun clearSharedPreferences() {
@@ -70,7 +63,7 @@ class SecureSaltProviderInstrumentedTest {
     @Test
     fun getSalt_shouldGenerateAndStoreSalt_whenCalledFirstTime() {
         // Act
-        val salt1 = secureSaltProvider.getSalt(context)
+        val salt1 = secureSaltProvider.getSalt()
 
         // Assert
         assertThat(salt1).isNotNull()
@@ -97,9 +90,9 @@ class SecureSaltProviderInstrumentedTest {
     @Test
     fun getSalt_shouldReturnExistingSalt_whenCalledMultipleTimes() {
         // Act
-        val salt1 = secureSaltProvider.getSalt(context)
+        val salt1 = secureSaltProvider.getSalt()
         // Call again; SecureSaltProvider uses a cached salt internally after first retrieval/generation
-        val salt2 = secureSaltProvider.getSalt(context)
+        val salt2 = secureSaltProvider.getSalt()
 
         // Assert
         assertThat(salt1).isNotNull()
@@ -112,14 +105,14 @@ class SecureSaltProviderInstrumentedTest {
     @Test
     fun getSalt_returnsNewSalt_ifSharedPreferencesAreClearedAndCacheIsBypassed() {
         // First provider and salt
-        val salt1 = secureSaltProvider.getSalt(context)
+        val salt1 = secureSaltProvider.getSalt()
         assertThat(salt1).isNotNull()
 
         // Clear preferences and reset the provider's cache to simulate a fresh state
         clearSharedPreferences()
-        com.example.biometricvotingapp.domain.security.SecureSaltProvider.clearSaltForTesting(context) // Resets cachedSalt
+        secureSaltProvider.clearSaltForTesting() // Resets cachedSalt
 
-        val salt2 = secureSaltProvider.getSalt(context) // Should generate a new one
+        val salt2 = secureSaltProvider.getSalt() // Should generate a new one
 
         assertThat(salt2).isNotNull()
         assertThat(salt1.contentEquals(salt2!!)).isFalse()
@@ -129,16 +122,16 @@ class SecureSaltProviderInstrumentedTest {
     fun saltIsRandomlyGenerated_acrossDifferentInstancesWithClearedStorage() {
         // Test that subsequent generations produce different salts if storage is cleared
         clearSharedPreferences()
-        com.example.biometricvotingapp.domain.security.SecureSaltProvider.clearSaltForTesting(context)
-        val saltA = secureSaltProvider.getSalt(context)
+        secureSaltProvider.clearSaltForTesting()
+        val saltA = secureSaltProvider.getSalt()
 
         clearSharedPreferences()
-        com.example.biometricvotingapp.domain.security.SecureSaltProvider.clearSaltForTesting(context)
-        val saltB = secureSaltProvider.getSalt(context) // Re-call on the same instance after clearing
+        secureSaltProvider.clearSaltForTesting()
+        val saltB = secureSaltProvider.getSalt() // Re-call on the same instance after clearing
 
         clearSharedPreferences()
-        com.example.biometricvotingapp.domain.security.SecureSaltProvider.clearSaltForTesting(context)
-        val saltC = secureSaltProvider.getSalt(context)
+        secureSaltProvider.clearSaltForTesting()
+        val saltC = secureSaltProvider.getSalt()
 
         assertThat(saltA).isNotNull()
         assertThat(saltB).isNotNull()

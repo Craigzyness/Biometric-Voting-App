@@ -7,9 +7,12 @@ import android.util.Base64
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
 import java.security.GeneralSecurityException
 import java.security.SecureRandom
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * SecureSaltProvider.kt
@@ -25,25 +28,30 @@ import java.security.SecureRandom
  * Dependencies (conceptual - ensure these are in build.gradle.kts):
  * - androidx.security:security-crypto:1.1.0-alpha06 (or latest)
  */
-object SecureSaltProvider {
+@Singleton
+class SecureSaltProvider @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
 
-    private const val TAG = "SecureSaltProvider"
+    companion object {
+        private const val TAG = "SecureSaltProvider"
 
-    private const val ENCRYPTED_PREFS_FILE_NAME = "biometric_app_secure_salt_prefs"
-    private const val KEY_ALIAS_SALT_PREFS = "biometric_app_salt_master_key_alias"
-    private const val PREF_KEY_ANONYMIZATION_SALT = "anonymization_salt_b64"
-    private const val SALT_SIZE_BYTES = 16 // 128 bits, a common size for salts
+        const val ENCRYPTED_PREFS_FILE_NAME = "biometric_app_secure_salt_prefs"
+        const val KEY_ALIAS_SALT_PREFS = "biometric_app_salt_master_key_alias"
+        const val PREF_KEY_ANONYMIZATION_SALT = "anonymization_salt_b64"
+        const val SALT_SIZE_BYTES = 16 // 128 bits, a common size for salts
+    }
 
     private var cachedSalt: ByteArray? = null
 
     @Synchronized
-    fun getSalt(context: Context): ByteArray? {
+    fun getSalt(): ByteArray? {
         if (cachedSalt != null) {
             return cachedSalt
         }
 
         try {
-            val masterKey = getOrCreateMasterKey(context)
+            val masterKey = getOrCreateMasterKey()
             val sharedPreferences = EncryptedSharedPreferences.create(
                 context,
                 ENCRYPTED_PREFS_FILE_NAME,
@@ -84,7 +92,7 @@ object SecureSaltProvider {
     }
 
     @Throws(GeneralSecurityException::class, IOException::class)
-    private fun getOrCreateMasterKey(context: Context): MasterKey {
+    private fun getOrCreateMasterKey(): MasterKey {
         // Defines the specification for the MasterKey
         val spec = KeyGenParameterSpec.Builder(
             KEY_ALIAS_SALT_PREFS, // Alias for the key in Android Keystore
@@ -105,10 +113,10 @@ object SecureSaltProvider {
      * Use with extreme caution.
      */
     @Synchronized
-    fun clearSaltForTesting(context: Context) {
+    fun clearSaltForTesting() {
         try {
             Log.w(TAG, "Attempting to clear stored salt for testing purposes.")
-            val masterKey = getOrCreateMasterKey(context) // MasterKey needed to open EncryptedSharedPreferences
+            val masterKey = getOrCreateMasterKey() // MasterKey needed to open EncryptedSharedPreferences
             val sharedPreferences = EncryptedSharedPreferences.create(
                 context,
                 ENCRYPTED_PREFS_FILE_NAME,
