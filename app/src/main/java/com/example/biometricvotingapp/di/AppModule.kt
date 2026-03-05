@@ -69,16 +69,12 @@ Biometric-Voting-App
         // This assumes SecureSaltProvider is refactored to a class in core.common taking Context.
         // TODO: Refactor SecureSaltProvider from 'object' to 'class' that takes Context for Hilt DI.
         return com.example.biometricvotingapp.core.common.SecureSaltProvider(context)
+    }
 
-    // TODO: Refactor AnonymizedIdGenerator from 'object' to 'class' that takes Context for Hilt DI.
-    // The current provider will not work as expected with 'object AnonymizedIdGenerator'.
-    // This provider is written assuming AnonymizedIdGenerator becomes:
-    // class AnonymizedIdGenerator @Inject constructor(@ApplicationContext private val context: Context)
     @Provides
     @Singleton
     fun provideAnonymizedIdGenerator(@ApplicationContext context: Context): AnonymizedIdGenerator {
-        // return AnonymizedIdGenerator(context) // This would be the line if it were a class
-        return com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator // Returning the object for now, Hilt won't inject this instance if constructor changes.
+        return AnonymizedIdGenerator(context)
     }
 
     // TODO: Refactor SecurityUtil from 'object' to 'class' that takes Context for Hilt DI.
@@ -130,45 +126,6 @@ Biometric-Voting-App
     // will be refactored from 'object' to 'class' and accept Context via constructor.
     // If they remain 'object's, they don't need to be provided by Hilt this way.
     // Their methods would continue to be called directly, e.g., AnonymizedIdGenerator.generate(context, ...).
-
-    @Provides
-    @Singleton
-    fun provideAnonymizedIdGenerator(@ApplicationContext context: Context): AnonymizedIdGenerator {
-        // This assumes AnonymizedIdGenerator is refactored to:
-        // class AnonymizedIdGenerator @Inject constructor(@ApplicationContext private val context: Context) { ... }
-        // OR that it has a public constructor taking Context.
-        // Given it's currently an 'object', this provider implies a structural change to AnonymizedIdGenerator.
-        // For this task, we write the provider as if AnonymizedIdGenerator will be made injectable.
-        // If AnonymizedIdGenerator remains an object, this provider is not how it would be used.
-        // For now, returning the object directly, but this isn't typical Hilt usage for objects.
-        // A true Hilt approach would require AnonymizedIdGenerator to be a class.
-        // Let's return the object for now, acknowledging this isn't DI in the Hilt sense for this specific object.
-        // To make it truly Hilt-ified, AnonymizedIdGenerator would need to be a class.
-        // The prompt had `return AnonymizedIdGenerator(context)`.
-        // The actual AnonymizedIdGenerator is an object.
-        // I will write this provider such that it would work if AnonymizedIdGenerator was a class
-        // as that seems to be the intent of Hilt DI.
-        // This means AnonymizedIdGenerator.kt needs to change from 'object' to 'class' and take context.
-        // For this specific output, I will assume this change to AnonymizedIdGenerator is pending.
-        return AnonymizedIdGenerator // This will cause a compile error if AnonymizedIdGenerator is not a class with a constructor
-                                      // or if a constructor AnonymizedIdGenerator(context) is expected by the prompt.
-                                      // The prompt example was: return AnonymizedIdGenerator(context)
-                                      // Let's assume it becomes a class:
-                                      // return com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator(context) - this won't compile yet
-                                      // Given it's an object:
-                                      // return com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator
-                                      // Hilt doesn't typically "provide" Kotlin objects this way. They are globally accessible.
-                                      // This provider might be for a wrapper class if the object itself is not refactored.
-                                      // For now, as per prompt's implication of DI:
-                                      // This line will be problematic until AnonymizedIdGenerator is a class.
-                                      // I will write it as if it IS a class for Hilt's purpose.
-        return com.example.biometricvotingapp.domain.security.AnonymizedIdGenerator // This would only work if it's refactored to a class AND this provider is for a wrapper
-                                                                                    // or if we are providing the object itself, which Hilt doesn't manage.
-                                                                                    // Let's assume the prompt means to make it injectable.
-                                                                                    // I will provide it as if it's a class that takes context.
-                                                                                    // This implies AnonymizedIdGenerator.kt needs to be changed.
-Biometric-Voting-App
-    }
 
     @Provides
     @Singleton
