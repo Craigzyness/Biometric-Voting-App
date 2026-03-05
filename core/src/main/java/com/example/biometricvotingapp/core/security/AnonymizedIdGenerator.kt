@@ -26,15 +26,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class AnonymizedIdGenerator @Inject constructor(
-    // @ApplicationContext private val context: Context, // Context can be injected if providers need it AND are not objects
-    // Assuming SecureSaltProvider and StableIdentifierProvider are refactored to be injectable
-    // and get their own context if needed, or this AnonymizedIdGenerator passes its context to them if they still take it.
-    // For now, assuming they are refactored to classes that don't require context in their getSalt/getStableId methods,
-    // or they are also injected here and use their own Hilt-injected context.
-    // The prompt for AppModule implies SecureSaltProvider(context) and StableIdentifierProvider(context).
-    // So, this class should inject those providers.
-    private val secureSaltProvider: SecureSaltProvider,
-    private val stableIdentifierProvider: StableIdentifierProvider
+    @ApplicationContext private val context: Context
 ) {
 
     companion object {
@@ -53,9 +45,8 @@ class AnonymizedIdGenerator @Inject constructor(
         // to avoid :core module's dependency on :app's BuildConfig.
         // Logging can be added in UseCases or ViewModels if needed.
 
-        // The providers now use the context they were constructed with (via Hilt).
-        val salt = secureSaltProvider.getSalt()
-        val stableId = stableIdentifierProvider.getStableIdentifier()
+        val salt = SecureSaltProvider(context).getSalt()
+        val stableId = StableIdentifierProvider(context).getStableIdentifier()
 
         if (salt == null || stableId == null) {
             // Consider logging this failure in the calling UseCase/ViewModel
