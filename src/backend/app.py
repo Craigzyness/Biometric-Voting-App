@@ -19,8 +19,12 @@ from flask_admin.contrib.sqla import ModelView
 
 from . import blockchain_service
 
-ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'admin')
-ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'secret')
+ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME')
+ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD')
+FLASK_SECRET_KEY = os.environ.get('FLASK_SECRET_KEY')
+
+if not ADMIN_USERNAME or not ADMIN_PASSWORD or not FLASK_SECRET_KEY:
+    raise RuntimeError("ADMIN_USERNAME, ADMIN_PASSWORD, and FLASK_SECRET_KEY environment variables must be set.")
 
 def check_auth(username, password): return username == ADMIN_USERNAME and password == ADMIN_PASSWORD
 def authenticate(): return Response('Login Required', 401, {'WWW-Authenticate': 'Basic realm="Login Required"'})
@@ -103,7 +107,7 @@ app = Flask(__name__)
 basedir = os.path.abspath(os.path.dirname(__file__))
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(basedir, 'voting_app.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'dev_secret_key_for_poc_!ChangeMe!')
+app.config['SECRET_KEY'] = FLASK_SECRET_KEY
 app.config['FLASK_ADMIN_SWATCH'] = 'cerulean'
 
 db = SQLAlchemy(app)
